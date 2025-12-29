@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { Phone, Upload, Calendar, Download, CheckCircle, XCircle, Clock, Database, Settings, PlayCircle, Shield, AlertCircle, Users, Activity, FileSpreadsheet, X, ArrowRight, Wifi, WifiOff, Loader, Archive, History, FileText, Key, Copy, Eye, EyeOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+// API base URL - use environment variable in production, fallback to relative path for dev
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
 const OutcallingApp = () => {
 
   const [activeTab, setActiveTab] = useState('import');
@@ -585,7 +588,7 @@ const OutcallingApp = () => {
         }));
         
         // Send to backend batch import endpoint (no API key required!)
-        const response = await fetch('/api/customers/import-batch', {
+        const response = await fetch(`${API_BASE_URL}/api/customers/import-batch`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -673,7 +676,7 @@ const OutcallingApp = () => {
 
     try {
       // Use test connection endpoint first (doesn't require exact customers endpoint)
-      const response = await fetch('/api/crm/test-connection', {
+      const response = await fetch(`${API_BASE_URL}/api/crm/test-connection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -761,7 +764,7 @@ const OutcallingApp = () => {
 
     setGeneratingApiKey(true);
     try {
-      const response = await fetch('/api/v1/api-keys/generate', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/api-keys/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -818,7 +821,7 @@ const OutcallingApp = () => {
 
     try {
       // Use backend proxy to avoid CORS issues
-      const response = await fetch('/api/vapi/test-connection', {
+      const response = await fetch(`${API_BASE_URL}/api/vapi/test-connection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1152,7 +1155,7 @@ You are a professional verification agent calling to confirm customer identity a
       console.log('📞 Scheduling calls with timezone:', scheduleSettings.timezone, 'at', scheduleSettings.date, scheduleSettings.time);
       console.log('📋 Customer IDs to schedule:', customerIds);
       
-      const response = await fetch('/api/calls/schedule', {
+      const response = await fetch(`${API_BASE_URL}/api/calls/schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -3708,7 +3711,7 @@ You are a professional verification agent calling to confirm customer identity a
                     <div className="space-y-4">
                       <div>
                         <div className="text-sm font-medium text-gray-700 mb-1">Base URL</div>
-                        <code className="block p-2 bg-gray-100 rounded text-sm">{window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000/api/v1</code>
+                        <code className="block p-2 bg-gray-100 rounded text-sm">{API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/api/v1</code>
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-700 mb-1">Authentication</div>
@@ -3879,7 +3882,7 @@ You are a professional verification agent calling to confirm customer identity a
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <a
-                        href={`${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000/docs`}
+                        href={`${API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/docs`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 p-4 border-2 border-indigo-200 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
@@ -3894,7 +3897,7 @@ You are a professional verification agent calling to confirm customer identity a
                         <ArrowRight className="w-5 h-5 text-indigo-600" />
                       </a>
                       <a
-                        href={`${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000/redoc`}
+                        href={`${API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/redoc`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 p-4 border-2 border-indigo-200 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
@@ -3920,7 +3923,7 @@ You are a professional verification agent calling to confirm customer identity a
                     <div className="space-y-4">
                       <div>
                         <div className="text-sm font-medium text-gray-700 mb-1">Base URL</div>
-                        <code className="block p-2 bg-gray-100 rounded text-sm">{window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000/api/v1</code>
+                        <code className="block p-2 bg-gray-100 rounded text-sm">{API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/api/v1</code>
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-700 mb-1">Authentication</div>
