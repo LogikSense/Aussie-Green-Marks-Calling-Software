@@ -1451,348 +1451,197 @@ You are a professional verification agent calling to confirm customer identity a
   };
 
   return (
-
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-
+    <div className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
-
-        {/* Header */}
-
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-
-          <div className="flex items-center justify-between">
-
+        <header className="card-elevated p-4 md:p-6 mb-4 md:mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
-
-              <div className="p-2 bg-indigo-100 rounded-lg">
-
-                <Shield className="w-8 h-8 text-indigo-600" />
-
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-white">
+                <Shield className="h-6 w-6" />
               </div>
-
               <div>
-
-                <h1 className="text-3xl font-bold text-gray-800">CRM Verification System</h1>
-
-                <p className="text-gray-600">Automated customer verification with Vapi AI</p>
-
+                <h1 className="text-xl md:text-2xl font-semibold text-slate-900">CRM Verification System</h1>
+                <p className="text-sm text-slate-500">Automated customer verification with Vapi AI</p>
               </div>
-
             </div>
-
-            <div className="flex gap-2">
-
-              <div className="px-4 py-2 bg-green-100 rounded-lg">
-
-                <div className="text-sm text-gray-600">Ready</div>
-
-                <div className="text-2xl font-bold text-green-600">{customers.length}</div>
-
+            <div className="flex gap-3">
+              <div className="min-w-[5rem] rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center">
+                <div className="text-xs font-medium text-slate-500">Ready</div>
+                <div className="text-lg font-semibold text-slate-900">{customers.length}</div>
               </div>
-
-              <div className="px-4 py-2 bg-blue-100 rounded-lg">
-
-                <div className="text-sm text-gray-600">Scheduled</div>
-
-                <div className="text-2xl font-bold text-blue-600">{scheduledCalls.length}</div>
-
+              <div className="min-w-[5rem] rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center">
+                <div className="text-xs font-medium text-slate-500">Scheduled</div>
+                <div className="text-lg font-semibold text-slate-900">{scheduledCalls.length}</div>
               </div>
-
-              <div className="px-4 py-2 bg-purple-100 rounded-lg">
-
-                <div className="text-sm text-gray-600">Completed</div>
-
-                <div className="text-2xl font-bold text-purple-600">{completedCalls.length}</div>
-
+              <div className="min-w-[5rem] rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center">
+                <div className="text-xs font-medium text-slate-500">Completed</div>
+                <div className="text-lg font-semibold text-slate-900">{completedCalls.length}</div>
               </div>
-
             </div>
-
           </div>
-
-        </div>
-
-        {/* Statistics Dashboard */}
+        </header>
 
         {completedCalls.length > 0 && (
-
-          <div className="grid grid-cols-4 gap-4 mb-6">
-
-            <div className="bg-white rounded-lg shadow p-4">
-
-              <div className="flex items-center gap-2 mb-2">
-
-                <CheckCircle className="w-5 h-5 text-green-600" />
-
-                <span className="text-sm text-gray-600">Fully Verified</span>
-
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                <span className="text-xs font-medium text-slate-500">Fully Verified</span>
               </div>
-
-              <div className="text-2xl font-bold text-green-600">{stats.fullyVerified}</div>
-
-              <div className="text-xs text-gray-500">{((stats.fullyVerified / stats.totalCalls) * 100).toFixed(1)}% success rate</div>
-
+              <div className="text-xl font-semibold text-slate-900">{stats.fullyVerified}</div>
+              <div className="text-xs text-slate-500">{stats.totalCalls ? ((stats.fullyVerified / stats.totalCalls) * 100).toFixed(1) : 0}% success rate</div>
             </div>
-
-            <div className="bg-white rounded-lg shadow p-4">
-
-              <div className="flex items-center gap-2 mb-2">
-
-                <AlertCircle className="w-5 h-5 text-yellow-600" />
-
-                <span className="text-sm text-gray-600">Partial Verification</span>
-
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertCircle className="h-4 w-4 text-amber-600" />
+                <span className="text-xs font-medium text-slate-500">Partial Verification</span>
               </div>
-
-              <div className="text-2xl font-bold text-yellow-600">{stats.partiallyVerified}</div>
-
-              <div className="text-xs text-gray-500">{((stats.partiallyVerified / stats.totalCalls) * 100).toFixed(1)}% of calls</div>
-
+              <div className="text-xl font-semibold text-slate-900">{stats.partiallyVerified}</div>
+              <div className="text-xs text-slate-500">{stats.totalCalls ? ((stats.partiallyVerified / stats.totalCalls) * 100).toFixed(1) : 0}% of calls</div>
             </div>
-
-            <div className="bg-white rounded-lg shadow p-4">
-
-              <div className="flex items-center gap-2 mb-2">
-
-                <Clock className="w-5 h-5 text-blue-600" />
-
-                <span className="text-sm text-gray-600">Avg Duration</span>
-
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="h-4 w-4 text-slate-600" />
+                <span className="text-xs font-medium text-slate-500">Avg Duration</span>
               </div>
-
-              <div className="text-2xl font-bold text-blue-600">{stats.avgDuration}s</div>
-
-              <div className="text-xs text-gray-500">{Math.floor(stats.avgDuration / 60)}m {stats.avgDuration % 60}s per call</div>
-
+              <div className="text-xl font-semibold text-slate-900">{stats.avgDuration}s</div>
+              <div className="text-xs text-slate-500">{Math.floor(stats.avgDuration / 60)}m {stats.avgDuration % 60}s per call</div>
             </div>
-
-            <div className="bg-white rounded-lg shadow p-4">
-
-              <div className="flex items-center gap-2 mb-2">
-
-                <Activity className="w-5 h-5 text-purple-600" />
-
-                <span className="text-sm text-gray-600">Avg Confidence</span>
-
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="h-4 w-4 text-slate-600" />
+                <span className="text-xs font-medium text-slate-500">Avg Confidence</span>
               </div>
-
-              <div className="text-2xl font-bold text-purple-600">{stats.avgConfidence}%</div>
-
-              <div className="text-xs text-gray-500">Verification confidence</div>
-
+              <div className="text-xl font-semibold text-slate-900">{stats.avgConfidence}%</div>
+              <div className="text-xs text-slate-500">Verification confidence</div>
             </div>
-
           </div>
-
         )}
 
-        {/* Navigation Tabs */}
-
-        <div className="bg-white rounded-lg shadow-lg mb-6">
-
-          <div className="flex border-b">
-
-            {[
-
-              { id: 'import', label: 'Import Customers', icon: Upload },
-
-              { id: 'schedule', label: 'Schedule Calls', icon: Calendar },
-
-              { id: 'results', label: 'Verification Results', icon: CheckCircle },
-
-              { id: 'history', label: 'History & Archive', icon: Archive },
-
-              { id: 'verification', label: 'Verification Config', icon: Shield },
-
-              { id: 'settings', label: 'API Settings', icon: Settings },
-
-              { id: 'api-docs', label: 'API Documentation', icon: FileText }
-
-            ].map(tab => (
-
-              <button
-
-                key={tab.id}
-
-                onClick={() => setActiveTab(tab.id)}
-
-                className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${
-
-                  activeTab === tab.id
-
-                    ? 'border-b-2 border-indigo-600 text-indigo-600'
-
-                    : 'text-gray-600 hover:text-gray-800'
-
-                }`}
-
-              >
-
-                <tab.icon className="w-5 h-5" />
-
-                {tab.label}
-
-              </button>
-
-            ))}
-
+        <div className="card-elevated mb-4 md:mb-6">
+          <div className="border-b border-slate-200 overflow-x-auto">
+            <nav className="flex min-w-0 gap-1 p-1" aria-label="Tabs">
+              {[
+                { id: 'import', label: 'Import Customers', icon: Upload },
+                { id: 'schedule', label: 'Schedule Calls', icon: Calendar },
+                { id: 'results', label: 'Verification Results', icon: CheckCircle },
+                { id: 'history', label: 'History & Archive', icon: Archive },
+                { id: 'verification', label: 'Verification Config', icon: Shield },
+                { id: 'settings', label: 'API Settings', icon: Settings },
+                { id: 'api-docs', label: 'API Documentation', icon: FileText },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-3 py-3 text-sm font-medium whitespace-nowrap rounded-t-lg border-b-2 transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-slate-800 text-slate-900 bg-slate-50'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50/50'
+                  }`}
+                >
+                  <tab.icon className="h-4 w-4 shrink-0" />
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
           </div>
-
-          <div className="p-6">
-
-            {/* Import Tab */}
+          <div className="p-4 md:p-6">
 
             {activeTab === 'import' && (
-
               <div>
-
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-
-                  <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
-
-                    <Database className="w-5 h-5" />
-
+                <div className="info-box mb-6">
+                  <h3 className="info-box-title">
+                    <Database className="h-5 w-5 text-slate-600" />
                     Import Customer Data for Verification
-
                   </h3>
-
-                  <p className="text-blue-700 text-sm">Import customers from your CRM API or upload an Excel file (.xlsx, .xls, or .csv). Each customer record should include verification fields like name, phone, email, address, and optional security fields (DOB, SSN last 4).</p>
-
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 mb-6">
-
-                  <button
-
-                    onClick={handleImportFromCRM}
-
-                    className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
-
-                  >
-
-                    <Database className="w-5 h-5" />
-
-                    Import from CRM
-
-                  </button>
-
-                  <label className="flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-md cursor-pointer">
-
-                    <FileSpreadsheet className="w-5 h-5" />
-
-                    Import from Excel
-
-                    <input
-
-                      type="file"
-
-                      accept=".xlsx,.xls,.csv"
-
-                      onChange={handleImportFromExcel}
-
-                      className="hidden"
-
-                    />
-
-                  </label>
-
-                </div>
-
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-
-                  <h4 className="font-semibold text-gray-800 mb-2">Excel File Format - Fully Flexible!</h4>
-
-                  <p className="text-sm text-gray-700 mb-3">
-                    <strong>You can upload Excel files in ANY format!</strong> The system will automatically detect and map columns intelligently. 
-                    If auto-detection needs help, you'll see a mapping interface to manually assign columns.
+                  <p className="info-box-body">
+                    Import customers from your CRM API or upload an Excel file (.xlsx, .xls, or .csv). Each customer record should include verification fields like name, phone, email, address, and optional security fields (DOB, SSN last 4).
                   </p>
-
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-
-                    <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-
-                      <p className="font-medium text-green-900 mb-2">✓ Required Fields:</p>
-
-                      <ul className="list-disc list-inside space-y-1 ml-2 text-green-800">
-
-                        <li><strong>Name:</strong> "Customer Name", "Full Name", "First Name" + "Last Name", or any name column</li>
-
-                        <li><strong>Phone:</strong> "Contact Number", "Phone", "Mobile", "Telephone", or any contact column</li>
-
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                  <button
+                    onClick={handleImportFromCRM}
+                    className="btn-primary py-3"
+                  >
+                    <Database className="h-5 w-5" />
+                    Import from CRM
+                  </button>
+                  <label className="btn-primary py-3 cursor-pointer bg-emerald-600 hover:bg-emerald-700">
+                    <FileSpreadsheet className="h-5 w-5" />
+                    Import from Excel
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={handleImportFromExcel}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="info-box mb-6">
+                  <h4 className="font-semibold text-slate-800 mb-2">Excel File Format</h4>
+                  <p className="text-sm text-slate-600 mb-3">
+                    <strong>You can upload Excel files in any format.</strong> The system will automatically detect and map columns. If needed, you can manually assign columns in the mapping step.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                      <p className="font-medium text-emerald-800 mb-2">Required fields</p>
+                      <ul className="list-disc list-inside space-y-1 text-emerald-800">
+                        <li><strong>Name:</strong> Customer Name, Full Name, or First + Last Name</li>
+                        <li><strong>Phone:</strong> Contact Number, Phone, Mobile, or Telephone</li>
                       </ul>
-
                     </div>
-
-                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-
-                      <p className="font-medium text-blue-900 mb-2">Optional Fields (Auto-detected):</p>
-
-                      <ul className="list-disc list-inside space-y-1 ml-2 text-blue-800">
-
-                        <li>Customer ID, Email, Address/Job Address</li>
-
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                      <p className="font-medium text-slate-800 mb-2">Optional (auto-detected)</p>
+                      <ul className="list-disc list-inside space-y-1 text-slate-700">
+                        <li>Customer ID, Email, Address / Job Address</li>
                         <li>Date of Birth, SSN, Security Info</li>
-
-                        <li><strong>All other columns</strong> are preserved as metadata</li>
-
+                        <li>All other columns are preserved as metadata</li>
                       </ul>
-
                     </div>
-
                   </div>
-
-                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-
-                    <p className="text-xs text-yellow-800">
-
-                      <strong>Examples:</strong> "Customer Name" will be split into first/last name automatically. 
-                      "Contact Number" maps to phone. "Job Address" maps to address. 
-                      Any format works - just upload and map if needed!
-
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                    <p className="text-xs text-amber-800">
+                      <strong>Examples:</strong> "Customer Name" is split into first/last automatically. "Contact Number" maps to phone, "Job Address" to address. Upload and map if needed.
                     </p>
-
                   </div>
-
                 </div>
 
-                {/* Column Mapping Modal */}
                 {excelPreview && (
-                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                      <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
-                        <h3 className="text-xl font-bold text-gray-800">Map Excel Columns</h3>
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50">
+                    <div className="card-elevated max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white p-4">
+                        <h3 className="text-lg font-semibold text-slate-900">Map Excel Columns</h3>
                         <button
                           onClick={() => {
                             setExcelPreview(null);
                             setExcelMapping({});
                           }}
-                          className="text-gray-500 hover:text-gray-700"
+                          className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                          aria-label="Close"
                         >
-                          <X className="w-6 h-6" />
+                          <X className="h-5 w-5" />
                         </button>
                       </div>
-                      
                       <div className="p-6">
-                        <p className="text-sm text-gray-600 mb-4">
-                          Map your Excel columns to the required fields. The system has auto-detected some columns (shown in green).
+                        <p className="text-sm text-slate-600 mb-4">
+                          Map your Excel columns to the required fields. Auto-detected columns are indicated below.
                         </p>
-                        
-                        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                          <p className="text-sm font-medium text-blue-900 mb-2">Data Preview (first 5 rows):</p>
+                        <div className="mb-4 info-box">
+                          <p className="info-box-title mb-2">Data preview (first 5 rows)</p>
                           <div className="overflow-x-auto">
-                            <table className="text-xs border-collapse">
+                            <table className="w-full text-xs border-collapse border border-slate-200">
                               <thead>
-                                <tr className="bg-gray-100">
+                                <tr className="table-header">
                                   {excelPreview.headers.map((h, i) => (
-                                    <th key={i} className="border p-2 text-left">{h}</th>
+                                    <th key={i} className="table-cell">{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
                                 {excelPreview.data.map((row, ri) => (
-                                  <tr key={ri}>
+                                  <tr key={ri} className="border-b border-slate-100 hover:bg-slate-50">
                                     {row.map((cell, ci) => (
-                                      <td key={ci} className="border p-1">{String(cell || '')}</td>
+                                      <td key={ci} className="table-cell">{String(cell || '')}</td>
                                     ))}
                                   </tr>
                                 ))}
@@ -1819,13 +1668,13 @@ You are a professional verification agent calling to confirm customer identity a
                             const selectedIndex = excelMapping[field.key]?.[0]?.index ?? detected?.[0]?.index;
                             
                             return (
-                              <div key={field.key} className="flex items-center gap-4 p-3 border rounded-lg">
-                                <div className="flex-1">
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                              <div key={field.key} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 border border-slate-200 rounded-lg bg-white">
+                                <div className="flex-1 min-w-0">
+                                  <label className="block text-sm font-medium text-slate-700 mb-1">
                                     {field.label}
                                     {field.required && <span className="text-red-500 ml-1">*</span>}
                                     {detected && (
-                                      <span className="ml-2 text-xs text-green-600">(Auto-detected)</span>
+                                      <span className="ml-2 text-xs text-emerald-600">(Auto-detected)</span>
                                     )}
                                   </label>
                                   <select
@@ -1837,7 +1686,7 @@ You are a professional verification agent calling to confirm customer identity a
                                         [field.key]: idx !== null ? [{ index: idx, header: excelPreview.headers[idx] }] : []
                                       });
                                     }}
-                                    className="w-full p-2 border rounded-lg text-sm"
+                                    className="input-standard"
                                   >
                                     <option value="">-- Select Column --</option>
                                     {excelPreview.headers.map((header, idx) => (
@@ -1848,7 +1697,7 @@ You are a professional verification agent calling to confirm customer identity a
                                   </select>
                                 </div>
                                 {selectedIndex !== undefined && (
-                                  <div className="text-xs text-gray-500">
+                                  <div className="text-xs text-slate-500 shrink-0">
                                     Sample: {String(excelPreview.data[0]?.[selectedIndex] || 'N/A').substring(0, 30)}
                                   </div>
                                 )}
@@ -1856,23 +1705,22 @@ You are a professional verification agent calling to confirm customer identity a
                             );
                           })}
                         </div>
-
-                        <div className="mt-6 flex gap-3 justify-end">
+                        <div className="mt-6 flex flex-wrap gap-3 justify-end">
                           <button
                             onClick={() => {
                               setExcelPreview(null);
                               setExcelMapping({});
                             }}
-                            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                            className="btn-secondary"
                           >
                             Cancel
                           </button>
                           <button
                             onClick={applyExcelMapping}
-                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+                            className="btn-primary"
                           >
                             Import Data
-                            <ArrowRight className="w-4 h-4" />
+                            <ArrowRight className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
@@ -1898,7 +1746,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                         }}
 
-                        className="text-sm text-indigo-600 hover:text-indigo-800"
+                        className="text-sm text-slate-600 hover:text-slate-900"
 
                       >
 
@@ -1914,9 +1762,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                         <thead>
 
-                          <tr className="border-b bg-gray-50">
+                          <tr className="table-header">
 
-                            <th className="text-left p-3">
+                            <th className="table-cell">
 
                               <input 
 
@@ -1936,17 +1784,17 @@ You are a professional verification agent calling to confirm customer identity a
 
                             </th>
 
-                            <th className="text-left p-3">Customer ID</th>
+                            <th className="table-cell">Customer ID</th>
 
-                            <th className="text-left p-3">Name</th>
+                            <th className="table-cell">Name</th>
 
-                            <th className="text-left p-3">Phone</th>
+                            <th className="table-cell">Phone</th>
 
-                            <th className="text-left p-3">Email</th>
+                            <th className="table-cell">Email</th>
 
-                            <th className="text-left p-3">Address</th>
+                            <th className="table-cell">Address</th>
 
-                            <th className="text-left p-3">Status</th>
+                            <th className="table-cell">Status</th>
 
                           </tr>
 
@@ -1956,7 +1804,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           {customers.map(customer => (
 
-                            <tr key={customer.id} className="border-b hover:bg-gray-50">
+                            <tr key={customer.id} className="border-b hover:bg-slate-50">
 
                               <td className="p-3">
 
@@ -2018,9 +1866,9 @@ You are a professional verification agent calling to confirm customer identity a
 
               <div>
 
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="mb-6 info-box">
 
-                  <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <h3 className="info-box-title">
 
                     <Calendar className="w-5 h-5" />
 
@@ -2028,7 +1876,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   </h3>
 
-                  <p className="text-blue-700 text-sm">Schedule automated verification calls with Vapi. The AI agent will verify customer details and update the verification status.</p>
+                  <p className="info-box-body">Schedule automated verification calls with Vapi. The AI agent will verify customer details and update the verification status.</p>
 
                 </div>
 
@@ -2036,7 +1884,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div>
 
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
 
                       Call Date
 
@@ -2058,7 +1906,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div>
 
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
 
                       Call Time
 
@@ -2080,7 +1928,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div>
 
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
 
                       Timezone
 
@@ -2130,7 +1978,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div>
 
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
 
                       Max Retries
 
@@ -2170,7 +2018,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   />
 
-                  <label className="text-sm text-gray-700">
+                  <label className="text-sm text-slate-700">
 
                     Automatically retry failed calls (no answer, busy)
 
@@ -2184,7 +2032,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   disabled={customers.filter(c => c.selected).length === 0}
 
-                  className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md mb-6"
+                  className="flex items-center gap-2 px-6 py-3 btn-primary transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed shadow-md mb-6"
 
                 >
 
@@ -2206,21 +2054,21 @@ You are a professional verification agent calling to confirm customer identity a
 
                         <thead>
 
-                          <tr className="border-b bg-gray-50">
+                          <tr className="table-header">
 
-                            <th className="text-left p-3">Customer</th>
+                            <th className="table-cell">Customer</th>
 
-                            <th className="text-left p-3">Phone</th>
+                            <th className="table-cell">Phone</th>
 
-                            <th className="text-left p-3">Scheduled</th>
+                            <th className="table-cell">Scheduled</th>
 
-                            <th className="text-left p-3">Vapi Call ID</th>
+                            <th className="table-cell">Vapi Call ID</th>
 
-                            <th className="text-left p-3">Retry Count</th>
+                            <th className="table-cell">Retry Count</th>
 
-                            <th className="text-left p-3">Status</th>
+                            <th className="table-cell">Status</th>
 
-                            <th className="text-left p-3">Action</th>
+                            <th className="table-cell">Action</th>
 
                           </tr>
 
@@ -2230,7 +2078,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           {scheduledCalls.map(call => (
 
-                            <tr key={call.vapiCallId} className="border-b hover:bg-gray-50">
+                            <tr key={call.vapiCallId} className="border-b hover:bg-slate-50">
 
                               <td className="p-3">{call.firstName} {call.lastName}</td>
 
@@ -2238,7 +2086,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                               <td className="p-3 text-sm">{call.scheduledDate} {call.scheduledTime}</td>
 
-                              <td className="p-3 text-xs text-gray-600 font-mono">{call.vapiCallId}</td>
+                              <td className="p-3 text-xs text-slate-600 font-mono">{call.vapiCallId}</td>
 
                               <td className="p-3">
 
@@ -2308,7 +2156,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                     <h3 className="text-lg font-semibold">Verification Results</h3>
 
-                    <p className="text-sm text-gray-600">Detailed verification outcomes with field-level validation</p>
+                    <p className="text-sm text-slate-600">Detailed verification outcomes with field-level validation</p>
 
                   </div>
 
@@ -2318,7 +2166,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                       onClick={exportResults}
 
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-md"
+                      className="flex items-center gap-2 px-4 py-2 btn-primary bg-emerald-600 hover:bg-emerald-700 shadow-md"
 
                     >
 
@@ -2334,7 +2182,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                 {completedCalls.length === 0 ? (
 
-                  <div className="text-center py-12 text-gray-500">
+                  <div className="text-center py-12 text-slate-500">
 
                     <Shield className="w-16 h-16 mx-auto mb-4 opacity-50" />
 
@@ -2358,15 +2206,15 @@ You are a professional verification agent calling to confirm customer identity a
 
                             <h4 className="font-semibold text-lg flex items-center gap-2">
 
-                              <Users className="w-5 h-5 text-gray-600" />
+                              <Users className="w-5 h-5 text-slate-600" />
 
                               {call.firstName} {call.lastName}
 
                             </h4>
 
-                            <p className="text-sm text-gray-600">{call.phone} • {call.email}</p>
+                            <p className="text-sm text-slate-600">{call.phone} • {call.email}</p>
 
-                            <p className="text-xs text-gray-500 font-mono mt-1">Customer ID: {call.customerId}</p>
+                            <p className="text-xs text-slate-500 font-mono mt-1">Customer ID: {call.customerId}</p>
 
                           </div>
 
@@ -2410,7 +2258,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                             {call.callOutcome === 'no_answer' && (
 
-                              <span className="px-3 py-2 bg-gray-100 text-gray-800 rounded-lg text-sm font-medium flex items-center gap-2">
+                              <span className="px-3 py-2 bg-slate-100 text-slate-800 rounded-lg text-sm font-medium flex items-center gap-2">
 
                                 <Phone className="w-5 h-5" />
 
@@ -2420,7 +2268,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                             )}
 
-                            <div className="text-xs text-gray-500 mt-1">
+                            <div className="text-xs text-slate-500 mt-1">
 
                               Confidence: {(call.verificationConfidence * 100).toFixed(1)}%
 
@@ -2430,11 +2278,11 @@ You are a professional verification agent calling to confirm customer identity a
 
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
+                        <div className="grid grid-cols-3 gap-4 mb-4 p-3 bg-slate-50 rounded-lg">
 
                           <div>
 
-                            <p className="text-xs text-gray-500">Duration</p>
+                            <p className="text-xs text-slate-500">Duration</p>
 
                             <p className="text-sm font-medium">{Math.floor(call.callDuration / 60)}m {call.callDuration % 60}s</p>
 
@@ -2442,7 +2290,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           <div>
 
-                            <p className="text-xs text-gray-500">Completed</p>
+                            <p className="text-xs text-slate-500">Completed</p>
 
                             <p className="text-sm font-medium">{new Date(call.completedAt).toLocaleString()}</p>
 
@@ -2450,7 +2298,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           <div>
 
-                            <p className="text-xs text-gray-500">Cost / Tokens</p>
+                            <p className="text-xs text-slate-500">Cost / Tokens</p>
 
                             <p className="text-sm font-medium">${call.callCost} / {call.aiTokensUsed}</p>
 
@@ -2462,7 +2310,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           <div className="mb-3">
 
-                            <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                            <p className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
 
                               <CheckCircle className="w-4 h-4 text-green-600" />
 
@@ -2492,7 +2340,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           <div className="mb-3">
 
-                            <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                            <p className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
 
                               <XCircle className="w-4 h-4 text-red-600" />
 
@@ -2528,7 +2376,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                             rel="noopener noreferrer"
 
-                            className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700"
+                            className="flex items-center gap-1 px-3 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 text-sm"
 
                           >
 
@@ -2546,7 +2394,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                             rel="noopener noreferrer"
 
-                            className="flex items-center gap-1 px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+                            className="flex items-center gap-1 px-3 py-2 bg-slate-600 text-white rounded-lg text-sm hover:bg-slate-700"
 
                           >
 
@@ -2556,7 +2404,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           </a>
 
-                          <span className="text-xs text-gray-500 self-center ml-auto font-mono">
+                          <span className="text-xs text-slate-500 self-center ml-auto font-mono">
 
                             Vapi ID: {call.vapiCallId}
 
@@ -2568,7 +2416,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-800">
 
-                            ⚠️ Call will be automatically retried (Attempt {call.retryCount + 1}/{call.maxRetries})
+                            Call will be automatically retried (Attempt {call.retryCount + 1}/{call.maxRetries})
 
                           </div>
 
@@ -2592,9 +2440,9 @@ You are a professional verification agent calling to confirm customer identity a
 
               <div>
 
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="mb-6 info-box">
 
-                  <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <h3 className="info-box-title">
 
                     <Archive className="w-5 h-5" />
 
@@ -2602,7 +2450,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   </h3>
 
-                  <p className="text-blue-700 text-sm">View all import and scheduling activities. Data older than 7 days is automatically archived.</p>
+                  <p className="info-box-body">View all import and scheduling activities. Data older than 7 days is automatically archived.</p>
 
                 </div>
 
@@ -2612,9 +2460,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div className="bg-white rounded-lg shadow p-4">
 
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
 
-                      <Upload className="w-5 h-5 text-indigo-600" />
+                      <Upload className="w-5 h-5 text-slate-600" />
 
                       Import History ({importHistory.length})
 
@@ -2624,13 +2472,13 @@ You are a professional verification agent calling to confirm customer identity a
 
                       {importHistory.length === 0 ? (
 
-                        <p className="text-sm text-gray-500 text-center py-4">No import history yet</p>
+                        <p className="text-sm text-slate-500 text-center py-4">No import history yet</p>
 
                       ) : (
 
                         importHistory.map(record => (
 
-                          <div key={record.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                          <div key={record.id} className="border rounded-lg p-3 hover:bg-slate-50">
 
                             <div className="flex justify-between items-start mb-2">
 
@@ -2638,11 +2486,11 @@ You are a professional verification agent calling to confirm customer identity a
 
                                 <p className="font-medium text-sm">{record.source}</p>
 
-                                <p className="text-xs text-gray-500">{new Date(record.timestamp).toLocaleString()}</p>
+                                <p className="text-xs text-slate-500">{new Date(record.timestamp).toLocaleString()}</p>
 
                               </div>
 
-                              <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-xs">
+                              <span className="px-2 py-1 bg-slate-100 text-slate-800 rounded text-xs">
 
                                 {record.customerCount} customers
 
@@ -2652,7 +2500,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                             {record.fileName && (
 
-                              <p className="text-xs text-gray-600 mb-1">
+                              <p className="text-xs text-slate-600 mb-1">
 
                                 <FileText className="w-3 h-3 inline mr-1" />
 
@@ -2664,7 +2512,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                             )}
 
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-slate-500">
 
                               Type: {record.type === 'crm' ? 'CRM API' : 'Excel Import'}
 
@@ -2684,9 +2532,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div className="bg-white rounded-lg shadow p-4">
 
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
 
-                      <Calendar className="w-5 h-5 text-purple-600" />
+                      <Calendar className="w-5 h-5 text-slate-600" />
 
                       Schedule History ({scheduleHistory.length})
 
@@ -2696,7 +2544,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                       {scheduleHistory.length === 0 ? (
 
-                        <p className="text-sm text-gray-500 text-center py-4">No schedule history yet</p>
+                        <p className="text-sm text-slate-500 text-center py-4">No schedule history yet</p>
 
                       ) : (
 
@@ -2710,7 +2558,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           return (
 
-                            <div key={record.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                            <div key={record.id} className="border rounded-lg p-3 hover:bg-slate-50">
 
                               <div className="flex justify-between items-start mb-2">
 
@@ -2718,13 +2566,13 @@ You are a professional verification agent calling to confirm customer identity a
 
                                   <p className="font-medium text-sm">Batch {record.batchId.substring(6, 13)}</p>
 
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-xs text-slate-500">
 
                                     {record.scheduledDate} {record.scheduledTime} ({record.timezone.split('/')[1]})
 
                                   </p>
 
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-xs text-slate-500">
 
                                     {new Date(record.timestamp).toLocaleString()}
 
@@ -2734,7 +2582,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                                 <div className="text-right">
 
-                                  <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs block mb-1">
+                                  <span className="px-2 py-1 bg-slate-100 text-slate-800 rounded text-xs block mb-1">
 
                                     {record.customerCount} scheduled
 
@@ -2774,7 +2622,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                                 )}
 
-                                <span className="text-xs text-gray-500 self-center">
+                                <span className="text-xs text-slate-500 self-center">
 
                                   Status: {record.status}
 
@@ -2800,7 +2648,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                 <div className="bg-white rounded-lg shadow p-4">
 
-                  <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
 
                     <Archive className="w-5 h-5 text-orange-600" />
 
@@ -2808,7 +2656,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   </h4>
 
-                  <p className="text-sm text-gray-600 mb-4">
+                  <p className="text-sm text-slate-600 mb-4">
 
                     Data older than 7 days is automatically archived. You can download archived batches anytime.
 
@@ -2818,13 +2666,13 @@ You are a professional verification agent calling to confirm customer identity a
 
                     {archivedData.length === 0 ? (
 
-                      <p className="text-sm text-gray-500 text-center py-4">No archived data yet</p>
+                      <p className="text-sm text-slate-500 text-center py-4">No archived data yet</p>
 
                     ) : (
 
                       archivedData.map(archive => (
 
-                        <div key={archive.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                        <div key={archive.id} className="border rounded-lg p-3 hover:bg-slate-50">
 
                           <div className="flex justify-between items-start mb-2">
 
@@ -2840,7 +2688,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                               </p>
 
-                              <p className="text-xs text-gray-500">
+                              <p className="text-xs text-slate-500">
 
                                 Archived: {new Date(archive.archivedAt).toLocaleString()}
 
@@ -2848,7 +2696,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                               {archive.originalDate && (
 
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs text-slate-500">
 
                                   Original Date: {new Date(archive.originalDate).toLocaleDateString()}
 
@@ -2900,9 +2748,9 @@ You are a professional verification agent calling to confirm customer identity a
 
               <div>
 
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="mb-6 info-box">
 
-                  <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <h3 className="info-box-title">
 
                     <Shield className="w-5 h-5" />
 
@@ -2910,7 +2758,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   </h3>
 
-                  <p className="text-blue-700 text-sm">Select which customer fields the AI agent should verify during calls. Required fields must be verified for a "fully verified" status.</p>
+                  <p className="info-box-body">Select which customer fields the AI agent should verify during calls. Required fields must be verified for a "fully verified" status.</p>
 
                 </div>
 
@@ -2918,7 +2766,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div className="space-y-4 mb-6">
 
-                    <h4 className="font-semibold text-gray-800">Primary Verification Fields</h4>
+                    <h4 className="font-semibold text-slate-800">Primary Verification Fields</h4>
 
                     
 
@@ -2926,9 +2774,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="font-medium text-gray-700">First & Last Name</label>
+                        <label className="font-medium text-slate-700">First & Last Name</label>
 
-                        <p className="text-sm text-gray-500">Verify customer's full legal name</p>
+                        <p className="text-sm text-slate-500">Verify customer's full legal name</p>
 
                       </div>
 
@@ -2950,9 +2798,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="font-medium text-gray-700">Phone Number</label>
+                        <label className="font-medium text-slate-700">Phone Number</label>
 
-                        <p className="text-sm text-gray-500">Confirm phone number on file</p>
+                        <p className="text-sm text-slate-500">Confirm phone number on file</p>
 
                       </div>
 
@@ -2974,9 +2822,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="font-medium text-gray-700">Email Address</label>
+                        <label className="font-medium text-slate-700">Email Address</label>
 
-                        <p className="text-sm text-gray-500">Verify email address for account</p>
+                        <p className="text-sm text-slate-500">Verify email address for account</p>
 
                       </div>
 
@@ -2998,9 +2846,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="font-medium text-gray-700">Physical Address</label>
+                        <label className="font-medium text-slate-700">Physical Address</label>
 
-                        <p className="text-sm text-gray-500">Confirm current mailing address</p>
+                        <p className="text-sm text-slate-500">Confirm current mailing address</p>
 
                       </div>
 
@@ -3022,9 +2870,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div className="space-y-4 mb-6">
 
-                    <h4 className="font-semibold text-gray-800">Secondary Verification Fields (Optional)</h4>
+                    <h4 className="font-semibold text-slate-800">Secondary Verification Fields (Optional)</h4>
 
-                    <p className="text-sm text-gray-600">Additional security verification for high-value accounts or fraud prevention</p>
+                    <p className="text-sm text-slate-600">Additional security verification for high-value accounts or fraud prevention</p>
 
                     
 
@@ -3032,9 +2880,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="font-medium text-gray-700">Date of Birth</label>
+                        <label className="font-medium text-slate-700">Date of Birth</label>
 
-                        <p className="text-sm text-gray-500">Verify DOB in MM/DD/YYYY format</p>
+                        <p className="text-sm text-slate-500">Verify DOB in MM/DD/YYYY format</p>
 
                       </div>
 
@@ -3056,9 +2904,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="font-medium text-gray-700">Last 4 of SSN</label>
+                        <label className="font-medium text-slate-700">Last 4 of SSN</label>
 
-                        <p className="text-sm text-gray-500">Last 4 digits of Social Security Number</p>
+                        <p className="text-sm text-slate-500">Last 4 digits of Social Security Number</p>
 
                       </div>
 
@@ -3080,9 +2928,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="font-medium text-gray-700">Security Question</label>
+                        <label className="font-medium text-slate-700">Security Question</label>
 
-                        <p className="text-sm text-gray-500">Custom security question answer</p>
+                        <p className="text-sm text-slate-500">Custom security question answer</p>
 
                       </div>
 
@@ -3104,7 +2952,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
 
-                    <h4 className="font-semibold text-yellow-900 mb-2">⚠️ Compliance Notice</h4>
+                    <h4 className="font-semibold text-amber-900 mb-2">Compliance Notice</h4>
 
                     <ul className="text-sm text-yellow-800 space-y-1">
 
@@ -3134,11 +2982,11 @@ You are a professional verification agent calling to confirm customer identity a
 
               <div>
 
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="mb-6 info-box">
 
                   <h3 className="font-semibold text-blue-900 mb-2">API Configuration</h3>
 
-                  <p className="text-blue-700 text-sm">Configure your CRM and Vapi API credentials for integration</p>
+                  <p className="info-box-body">Configure your CRM and Vapi API credentials for integration</p>
 
                 </div>
 
@@ -3148,9 +2996,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                     <div className="flex items-center justify-between mb-4">
 
-                      <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                      <h4 className="font-semibold text-slate-800 flex items-center gap-2">
 
-                        <Database className="w-5 h-5 text-indigo-600" />
+                        <Database className="w-5 h-5 text-slate-600" />
 
                         CRM Integration
 
@@ -3184,7 +3032,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                         {connectionStatus.crm.status === 'disconnected' && (
 
-                          <span className="flex items-center gap-1 text-sm text-gray-500">
+                          <span className="flex items-center gap-1 text-sm text-slate-500">
 
                             <WifiOff className="w-4 h-4" />
 
@@ -3200,7 +3048,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           disabled={connectionStatus.crm.testing}
 
-                          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
+                          className="flex items-center gap-2 px-4 py-2 btn-primary transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed text-sm font-medium"
 
                         >
 
@@ -3254,7 +3102,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
 
                           CRM API Endpoint
 
@@ -3284,7 +3132,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
 
                           CRM API Key
 
@@ -3320,9 +3168,9 @@ You are a professional verification agent calling to confirm customer identity a
 
                     <div className="flex items-center justify-between mb-4">
 
-                      <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                      <h4 className="font-semibold text-slate-800 flex items-center gap-2">
 
-                        <Phone className="w-5 h-5 text-purple-600" />
+                        <Phone className="w-5 h-5 text-slate-600" />
 
                         Vapi Integration
 
@@ -3356,7 +3204,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                         {connectionStatus.vapi.status === 'disconnected' && (
 
-                          <span className="flex items-center gap-1 text-sm text-gray-500">
+                          <span className="flex items-center gap-1 text-sm text-slate-500">
 
                             <WifiOff className="w-4 h-4" />
 
@@ -3372,7 +3220,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                           disabled={connectionStatus.vapi.testing}
 
-                          className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
+                          className="flex items-center gap-2 px-4 py-2 btn-primary transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed text-sm font-medium"
 
                         >
 
@@ -3426,7 +3274,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                       <div>
 
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
 
                           Vapi API Key
 
@@ -3452,13 +3300,13 @@ You are a professional verification agent calling to confirm customer identity a
 
                         />
 
-                        <p className="text-xs text-gray-500 mt-1">Get your API key from Vapi dashboard</p>
+                        <p className="text-xs text-slate-500 mt-1">Get your API key from Vapi dashboard</p>
 
                       </div>
 
                       <div>
 
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
 
                           Vapi Phone Number ID
 
@@ -3484,13 +3332,13 @@ You are a professional verification agent calling to confirm customer identity a
 
                         />
 
-                        <p className="text-xs text-gray-500 mt-1">The phone number ID to use for outbound calls</p>
+                        <p className="text-xs text-slate-500 mt-1">The phone number ID to use for outbound calls</p>
 
                       </div>
 
                       <div>
 
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
 
                           Vapi Assistant ID
 
@@ -3516,13 +3364,13 @@ You are a professional verification agent calling to confirm customer identity a
 
                         />
 
-                        <p className="text-xs text-gray-500 mt-1">Your verification assistant ID</p>
+                        <p className="text-xs text-slate-500 mt-1">Your verification assistant ID</p>
 
                       </div>
 
                       <div>
 
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
 
                           Webhook URL (Optional)
 
@@ -3542,7 +3390,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                         />
 
-                        <p className="text-xs text-gray-500 mt-1">Endpoint for receiving verification results and function calls</p>
+                        <p className="text-xs text-slate-500 mt-1">Endpoint for receiving verification results and function calls</p>
 
                       </div>
 
@@ -3553,15 +3401,15 @@ You are a professional verification agent calling to confirm customer identity a
                   {/* API Key Management Section */}
                   <div className="border rounded-lg p-5 bg-white shadow-sm">
                     <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                        <Key className="w-5 h-5 text-indigo-600" />
+                      <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                        <Key className="w-5 h-5 text-slate-600" />
                         API Key Management
                       </h4>
                     </div>
 
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
                           Current API Key (for generating new API keys)
                         </label>
                         <div className="flex gap-2">
@@ -3577,7 +3425,7 @@ You are a professional verification agent calling to confirm customer identity a
                           />
                           <button
                             onClick={() => setShowApiKey(!showApiKey)}
-                            className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                            className="px-4 py-2 border rounded-lg hover:bg-slate-50"
                             title={showApiKey ? "Hide API key" : "Show API key"}
                           >
                             {showApiKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -3595,10 +3443,10 @@ You are a professional verification agent calling to confirm customer identity a
                       </div>
 
                       <div className="border-t pt-4">
-                        <h5 className="font-medium text-gray-700 mb-3">Generate New API Key</h5>
+                        <h5 className="font-medium text-slate-700 mb-3">Generate New API Key</h5>
                         <div className="space-y-3">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
                               Name (Optional)
                             </label>
                             <input
@@ -3610,7 +3458,7 @@ You are a professional verification agent calling to confirm customer identity a
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
                               Description (Optional)
                             </label>
                             <textarea
@@ -3624,7 +3472,7 @@ You are a professional verification agent calling to confirm customer identity a
                           <button
                             onClick={generateApiKey}
                             disabled={!currentApiKey || generatingApiKey}
-                            className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            className="w-full px-4 py-2 btn-primary transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                           >
                             {generatingApiKey ? (
                               <>
@@ -3645,7 +3493,7 @@ You are a professional verification agent calling to confirm customer identity a
                         <div className="mt-4 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
                           <div className="flex items-start justify-between mb-2">
                             <div>
-                              <h5 className="font-semibold text-yellow-900 mb-1">⚠️ New API Key Generated</h5>
+                              <h5 className="font-semibold text-amber-900 mb-1">New API Key Generated</h5>
                               <p className="text-sm text-yellow-800 mb-3">
                                 Save this key immediately! It won't be shown again.
                               </p>
@@ -3662,7 +3510,7 @@ You are a professional verification agent calling to confirm customer identity a
                               <code className="text-sm font-mono break-all">{newApiKey.fullKey}</code>
                               <button
                                 onClick={() => copyApiKey(newApiKey.fullKey)}
-                                className="ml-2 p-1 hover:bg-gray-100 rounded"
+                                className="ml-2 p-1 hover:bg-slate-100 rounded"
                                 title="Copy to clipboard"
                               >
                                 <Copy className="w-4 h-4" />
@@ -3679,17 +3527,17 @@ You are a professional verification agent calling to confirm customer identity a
 
                       {apiKeys.length > 0 && (
                         <div className="border-t pt-4">
-                          <h5 className="font-medium text-gray-700 mb-3">Generated API Keys</h5>
+                          <h5 className="font-medium text-slate-700 mb-3">Generated API Keys</h5>
                           <div className="space-y-2">
                             {apiKeys.map((key, index) => (
-                              <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between">
+                              <div key={index} className="p-3 bg-slate-50 rounded-lg flex items-center justify-between">
                                 <div>
                                   <div className="font-medium text-sm">{key.name}</div>
-                                  <code className="text-xs text-gray-600">{key.prefix || key.fullKey?.substring(0, 16) + '...'}</code>
+                                  <code className="text-xs text-slate-600">{key.prefix || key.fullKey?.substring(0, 16) + '...'}</code>
                                 </div>
                                 <button
                                   onClick={() => copyApiKey(key.fullKey)}
-                                  className="p-1 hover:bg-gray-200 rounded"
+                                  className="p-1 hover:bg-slate-200 rounded"
                                   title="Copy full key"
                                 >
                                   <Copy className="w-4 h-4" />
@@ -3704,20 +3552,20 @@ You are a professional verification agent calling to confirm customer identity a
 
                   {/* API Configuration Info */}
                   <div className="border rounded-lg p-5 bg-white shadow-sm">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <Settings className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                      <Settings className="w-5 h-5 text-slate-600" />
                       API Configuration
                     </h4>
                     <div className="space-y-4">
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Base URL</div>
-                        <code className="block p-2 bg-gray-100 rounded text-sm">{API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/api/v1</code>
+                        <div className="text-sm font-medium text-slate-700 mb-1">Base URL</div>
+                        <code className="block p-2 bg-slate-100 rounded text-sm">{API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/api/v1</code>
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Authentication</div>
-                        <div className="p-3 bg-gray-50 rounded text-sm">
+                        <div className="text-sm font-medium text-slate-700 mb-1">Authentication</div>
+                        <div className="p-3 bg-slate-50 rounded text-sm">
                           <div className="mb-2">Include your API key in the Authorization header:</div>
-                          <code className="block p-2 bg-gray-100 rounded">Authorization: Bearer &lt;your-api-key&gt;</code>
+                          <code className="block p-2 bg-slate-100 rounded">Authorization: Bearer &lt;your-api-key&gt;</code>
                         </div>
                       </div>
                     </div>
@@ -3725,7 +3573,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <button
 
-                    className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-md"
+                    className="w-full px-6 py-3 btn-primary transition-colors font-medium shadow-md"
 
                   >
 
@@ -3733,7 +3581,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   </button>
 
-                  <div className="mt-6 p-5 bg-gray-50 rounded-lg border">
+                  <div className="mt-6 p-5 bg-slate-50 rounded-lg border">
 
                     <h4 className="font-semibold mb-3 flex items-center gap-2">
 
@@ -3743,7 +3591,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                     </h4>
 
-                    <div className="space-y-3 text-sm text-gray-700">
+                    <div className="space-y-3 text-sm text-slate-700">
 
                       <div>
 
@@ -3831,7 +3679,7 @@ You are a professional verification agent calling to confirm customer identity a
 
                   <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
 
-                    <h4 className="font-semibold text-green-900 mb-2">✓ Best Practices</h4>
+                    <h4 className="font-semibold text-emerald-900 mb-2">Best Practices</h4>
 
                     <ul className="text-sm text-green-800 space-y-1">
 
@@ -3860,12 +3708,12 @@ You are a professional verification agent calling to confirm customer identity a
             {/* API Documentation Tab */}
             {activeTab === 'api-docs' && (
               <div>
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                <div className="mb-6 info-box">
+                  <h3 className="info-box-title">
                     <FileText className="w-5 h-5" />
                     API Documentation for Integration
                   </h3>
-                  <p className="text-blue-700 text-sm">
+                  <p className="info-box-body">
                     Access interactive API documentation and integrate with n8n, Zapier, Make.com, and other automation tools.
                   </p>
                 </div>
@@ -3873,11 +3721,11 @@ You are a professional verification agent calling to confirm customer identity a
                 <div className="space-y-6">
                   {/* Interactive API Docs */}
                   <div className="border rounded-lg p-6 bg-white shadow-sm">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-slate-600" />
                       Interactive API Documentation
                     </h4>
-                    <p className="text-gray-600 mb-4">
+                    <p className="text-slate-600 mb-4">
                       Explore and test all available API endpoints with interactive documentation:
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3885,56 +3733,56 @@ You are a professional verification agent calling to confirm customer identity a
                         href={`${API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/docs`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-4 border-2 border-indigo-200 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                        className="flex items-center gap-3 p-4 border-2 border-slate-200 rounded-lg hover:border-slate-300 hover:bg-slate-50 transition-colors"
                       >
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                          <FileText className="w-6 h-6 text-indigo-600" />
+                        <div className="p-2 bg-slate-100 rounded-lg">
+                          <FileText className="w-6 h-6 text-slate-600" />
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-gray-800">Swagger UI</div>
-                          <div className="text-sm text-gray-600">Interactive API explorer</div>
+                          <div className="font-semibold text-slate-800">Swagger UI</div>
+                          <div className="text-sm text-slate-600">Interactive API explorer</div>
                         </div>
-                        <ArrowRight className="w-5 h-5 text-indigo-600" />
+                        <ArrowRight className="w-5 h-5 text-slate-600" />
                       </a>
                       <a
                         href={`${API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/redoc`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-4 border-2 border-indigo-200 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                        className="flex items-center gap-3 p-4 border-2 border-slate-200 rounded-lg hover:border-slate-300 hover:bg-slate-50 transition-colors"
                       >
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                          <FileText className="w-6 h-6 text-indigo-600" />
+                        <div className="p-2 bg-slate-100 rounded-lg">
+                          <FileText className="w-6 h-6 text-slate-600" />
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-gray-800">ReDoc</div>
-                          <div className="text-sm text-gray-600">Beautiful API documentation</div>
+                          <div className="font-semibold text-slate-800">ReDoc</div>
+                          <div className="text-sm text-slate-600">Beautiful API documentation</div>
                         </div>
-                        <ArrowRight className="w-5 h-5 text-indigo-600" />
+                        <ArrowRight className="w-5 h-5 text-slate-600" />
                       </a>
                     </div>
                   </div>
 
                   {/* API Information */}
                   <div className="border rounded-lg p-6 bg-white shadow-sm">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <Settings className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                      <Settings className="w-5 h-5 text-slate-600" />
                       API Configuration
                     </h4>
                     <div className="space-y-4">
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Base URL</div>
-                        <code className="block p-2 bg-gray-100 rounded text-sm">{API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/api/v1</code>
+                        <div className="text-sm font-medium text-slate-700 mb-1">Base URL</div>
+                        <code className="block p-2 bg-slate-100 rounded text-sm">{API_BASE_URL || `${window.location.protocol === 'https:' ? 'https' : 'http'}://localhost:8000`}/api/v1</code>
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Authentication</div>
-                        <div className="p-3 bg-gray-50 rounded text-sm">
+                        <div className="text-sm font-medium text-slate-700 mb-1">Authentication</div>
+                        <div className="p-3 bg-slate-50 rounded text-sm">
                           <div className="mb-2">Include your API key in the Authorization header:</div>
-                          <code className="block p-2 bg-gray-100 rounded">Authorization: Bearer &lt;your-api-key&gt;</code>
+                          <code className="block p-2 bg-slate-100 rounded">Authorization: Bearer &lt;your-api-key&gt;</code>
                         </div>
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Getting Your API Key</div>
-                        <div className="p-3 bg-blue-50 rounded text-sm text-gray-700">
+                        <div className="text-sm font-medium text-slate-700 mb-1">Getting Your API Key</div>
+                        <div className="p-3 bg-blue-50 rounded text-sm text-slate-700">
                           <p className="mb-2">1. Check the backend console for the auto-generated default key (development only)</p>
                           <p className="mb-2">2. Or set <code className="bg-white px-1 rounded">API_KEYS</code> in your <code className="bg-white px-1 rounded">backend/.env</code> file</p>
                           <p>3. Multiple API keys can be comma-separated</p>
@@ -3945,66 +3793,66 @@ You are a professional verification agent calling to confirm customer identity a
 
                   {/* Quick Links */}
                   <div className="border rounded-lg p-6 bg-white shadow-sm">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <Activity className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-slate-600" />
                       Quick API Endpoints
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="p-3 border rounded-lg">
-                        <div className="text-xs font-semibold text-indigo-600 mb-1">POST</div>
+                        <div className="text-xs font-semibold text-slate-600 mb-1">POST</div>
                         <code className="text-sm">/api/v1/customers</code>
-                        <div className="text-xs text-gray-600 mt-1">Create a new customer</div>
+                        <div className="text-xs text-slate-600 mt-1">Create a new customer</div>
                       </div>
                       <div className="p-3 border rounded-lg">
                         <div className="text-xs font-semibold text-green-600 mb-1">GET</div>
                         <code className="text-sm">/api/v1/customers</code>
-                        <div className="text-xs text-gray-600 mt-1">List all customers</div>
+                        <div className="text-xs text-slate-600 mt-1">List all customers</div>
                       </div>
                       <div className="p-3 border rounded-lg">
-                        <div className="text-xs font-semibold text-indigo-600 mb-1">POST</div>
+                        <div className="text-xs font-semibold text-slate-600 mb-1">POST</div>
                         <code className="text-sm">/api/v1/calls/schedule</code>
-                        <div className="text-xs text-gray-600 mt-1">Schedule verification calls</div>
+                        <div className="text-xs text-slate-600 mt-1">Schedule verification calls</div>
                       </div>
                       <div className="p-3 border rounded-lg">
                         <div className="text-xs font-semibold text-green-600 mb-1">GET</div>
                         <code className="text-sm">/api/v1/calls/results/completed</code>
-                        <div className="text-xs text-gray-600 mt-1">Get completed call results</div>
+                        <div className="text-xs text-slate-600 mt-1">Get completed call results</div>
                       </div>
                       <div className="p-3 border rounded-lg">
                         <div className="text-xs font-semibold text-green-600 mb-1">GET</div>
                         <code className="text-sm">/api/v1/stats</code>
-                        <div className="text-xs text-gray-600 mt-1">Get system statistics</div>
+                        <div className="text-xs text-slate-600 mt-1">Get system statistics</div>
                       </div>
                       <div className="p-3 border rounded-lg">
-                        <div className="text-xs font-semibold text-indigo-600 mb-1">POST</div>
+                        <div className="text-xs font-semibold text-slate-600 mb-1">POST</div>
                         <code className="text-sm">/api/v1/webhooks/custom</code>
-                        <div className="text-xs text-gray-600 mt-1">Custom webhook endpoint</div>
+                        <div className="text-xs text-slate-600 mt-1">Custom webhook endpoint</div>
                       </div>
                     </div>
                   </div>
 
                   {/* Integration Guides */}
                   <div className="border rounded-lg p-6 bg-white shadow-sm">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <Users className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                      <Users className="w-5 h-5 text-slate-600" />
                       Integration Guides
                     </h4>
                     <div className="space-y-3">
-                      <div className="p-3 bg-gray-50 rounded">
-                        <div className="font-medium text-gray-800 mb-1">n8n Integration</div>
-                        <div className="text-sm text-gray-600">
+                      <div className="p-3 bg-slate-50 rounded">
+                        <div className="font-medium text-slate-800 mb-1">n8n Integration</div>
+                        <div className="text-sm text-slate-600">
                           Use the HTTP Request node with POST/GET methods. Set Authorization header with your API key.
                         </div>
                       </div>
-                      <div className="p-3 bg-gray-50 rounded">
-                        <div className="font-medium text-gray-800 mb-1">Zapier Integration</div>
-                        <div className="text-sm text-gray-600">
+                      <div className="p-3 bg-slate-50 rounded">
+                        <div className="font-medium text-slate-800 mb-1">Zapier Integration</div>
+                        <div className="text-sm text-slate-600">
                           Use "Webhooks by Zapier" action. Add Authorization header: <code className="bg-white px-1 rounded">Bearer &lt;api-key&gt;</code>
                         </div>
                       </div>
-                      <div className="p-3 bg-gray-50 rounded">
-                        <div className="font-medium text-gray-800 mb-1">Make.com (Integromat)</div>
-                        <div className="text-sm text-gray-600">
+                      <div className="p-3 bg-slate-50 rounded">
+                        <div className="font-medium text-slate-800 mb-1">Make.com (Integromat)</div>
+                        <div className="text-sm text-slate-600">
                           Use HTTP module with Authorization header. Map your data fields to the API request body.
                         </div>
                       </div>
@@ -4013,14 +3861,14 @@ You are a professional verification agent calling to confirm customer identity a
 
                   {/* Documentation File */}
                   <div className="border rounded-lg p-6 bg-white shadow-sm">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-slate-600" />
                       Full Documentation
                     </h4>
-                    <p className="text-gray-600 mb-3">
+                    <p className="text-slate-600 mb-3">
                       Complete API documentation with examples, request/response formats, and integration guides is available in:
                     </p>
-                    <code className="block p-2 bg-gray-100 rounded text-sm">backend/API_DOCUMENTATION.md</code>
+                    <code className="block p-2 bg-slate-100 rounded text-sm">backend/API_DOCUMENTATION.md</code>
                   </div>
                 </div>
               </div>
