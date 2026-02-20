@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Phone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Register() {
@@ -30,7 +31,13 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen app-surface flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+      <div className="flex items-center gap-2 mb-8">
+        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center">
+          <Phone className="w-5 h-5 text-white" />
+        </div>
+        <span className="font-semibold text-slate-800 text-lg">Voice CRM</span>
+      </div>
       <div className="card card-elevated w-full max-w-md p-8">
         <h1 className="text-xl font-semibold text-slate-800 mb-6">Create account</h1>
         <form onSubmit={handleSubmit} className="space-y-4">

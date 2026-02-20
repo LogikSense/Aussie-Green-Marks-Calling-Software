@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
-import { Phone, Upload, Calendar, Download, CheckCircle, XCircle, Clock, Database, Settings, PlayCircle, Shield, AlertCircle, Users, Activity, FileSpreadsheet, X, ArrowRight, Wifi, WifiOff, Loader, Archive, History, FileText, Key, Copy, Eye, EyeOff, LogOut } from 'lucide-react';
+import { Phone, Upload, Calendar, Download, CheckCircle, XCircle, Clock, Database, Settings, PlayCircle, Shield, AlertCircle, Users, Activity, FileSpreadsheet, X, ArrowRight, Wifi, WifiOff, Loader, Archive, History, FileText, Key, Copy, Eye, EyeOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
+import DashboardLayout from './DashboardLayout';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -104,6 +105,53 @@ const OutcallingApp = () => {
   const [currentApiKey, setCurrentApiKey] = useState(() => {
     return localStorage.getItem('currentApiKey') || '';
   });
+
+  const fetchCustomers = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/customers?limit=500`, { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = (data.customers || []).map(c => ({ ...c, selected: !!c.selected }));
+      setCustomers(list);
+    } catch (e) {
+      console.error('Fetch customers failed', e);
+    }
+  }, [getAuthHeaders]);
+
+  useEffect(() => {
+    if (user) fetchCustomers();
+  }, [user, fetchCustomers]);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/settings`, { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.config)
+        setApiConfig(prev => ({ ...prev, ...data.config }));
+    } catch (e) {
+      console.error('Fetch settings failed', e);
+    }
+  }, [getAuthHeaders]);
+
+  useEffect(() => {
+    if (user) fetchSettings();
+  }, [user, fetchSettings]);
+
+  const saveSettings = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(apiConfig)
+      });
+      if (res.ok) alert('Configuration saved.');
+      else alert('Failed to save configuration.');
+    } catch (e) {
+      console.error('Save settings failed', e);
+      alert('Failed to save configuration.');
+    }
+  }, [getAuthHeaders, apiConfig]);
 
   // Auto-archive data older than 1 week
   useEffect(() => {
@@ -602,9 +650,7 @@ const OutcallingApp = () => {
         if (response.ok) {
           const result = await response.json();
           console.log(`✅ Backend import result:`, result);
-          
-          setCustomers([...customers, ...importedCustomers]);
-          
+          await fetchCustomers();
           // Record import history
           const importRecord = {
             id: `import_${Date.now()}`,
@@ -717,13 +763,16 @@ const OutcallingApp = () => {
         } else {
           setConnectionStatus({
             ...connectionStatus,
-            crm: { 
-              status: 'connected', 
-              message: 'Connection successful!', 
-              testing: false 
-            }
+            crm: { status: 'connected', message: 'Connection successful!', testing: false }
           });
         }
+        try {
+          await fetch(`${API_BASE_URL}/api/v1/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(apiConfig)
+          });
+        } catch (_) {}
       } else {
         // Handle error response
         let errorMessage = 'Connection failed. Please check your credentials and endpoint URL.';
@@ -838,33 +887,27 @@ const OutcallingApp = () => {
             const data = JSON.parse(responseText);
             setConnectionStatus({
               ...connectionStatus,
-              vapi: { 
-                status: 'connected', 
-                message: data.message || 'Connection successful! API key is valid.', 
-                testing: false 
-              }
+              vapi: { status: 'connected', message: data.message || 'Connection successful! API key is valid.', testing: false }
             });
           } catch (parseError) {
-            // If parsing fails but status is OK, still consider it successful
             setConnectionStatus({
               ...connectionStatus,
-              vapi: { 
-                status: 'connected', 
-                message: 'Connection successful! API key is valid.', 
-                testing: false 
-              }
+              vapi: { status: 'connected', message: 'Connection successful! API key is valid.', testing: false }
             });
           }
         } else {
           setConnectionStatus({
             ...connectionStatus,
-            vapi: { 
-              status: 'connected', 
-              message: 'Connection successful! API key is valid.', 
-              testing: false 
-            }
+            vapi: { status: 'connected', message: 'Connection successful! API key is valid.', testing: false }
           });
         }
+        try {
+          await fetch(`${API_BASE_URL}/api/v1/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(apiConfig)
+          });
+        } catch (_) {}
       } else {
         // Handle error response
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -1197,7 +1240,7 @@ You are a professional verification agent calling to confirm customer identity a
 
       setScheduledCalls([...scheduledCalls, ...scheduled]);
 
-      setCustomers(customers.filter(c => !c.selected));
+      setCustomers(customers.map(c => ({ ...c, selected: false })));
 
       // Record schedule history
       const scheduleRecord = {
@@ -1450,114 +1493,57 @@ You are a professional verification agent calling to confirm customer identity a
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto">
-        <header className="card-elevated p-4 md:p-6 mb-4 md:mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-white">
-                <Shield className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-xl md:text-2xl font-semibold text-slate-900">CRM Verification System</h1>
-                <p className="text-sm text-slate-500">Automated customer verification with Vapi AI</p>
-              </div>
+    <DashboardLayout
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      user={user}
+      logout={logout}
+      stats={{
+        customers: customers.length,
+        scheduledCalls: scheduledCalls.length,
+        completedCalls: completedCalls.length,
+      }}
+    >
+      {completedCalls.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+          <div className="card p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs font-medium text-slate-500">Fully Verified</span>
             </div>
-            <div className="flex gap-3">
-              <div className="min-w-[5rem] rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center">
-                <div className="text-xs font-medium text-slate-500">Ready</div>
-                <div className="text-lg font-semibold text-slate-900">{customers.length}</div>
-              </div>
-              <div className="min-w-[5rem] rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center">
-                <div className="text-xs font-medium text-slate-500">Scheduled</div>
-                <div className="text-lg font-semibold text-slate-900">{scheduledCalls.length}</div>
-              </div>
-              <div className="min-w-[5rem] rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center">
-                <div className="text-xs font-medium text-slate-500">Completed</div>
-                <div className="text-lg font-semibold text-slate-900">{completedCalls.length}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <span>{user?.email || user?.full_name || 'User'}</span>
-              <button
-                type="button"
-                onClick={logout}
-                className="btn-secondary flex items-center gap-1.5 py-1.5 px-2.5 text-xs"
-                title="Sign out"
-              >
-                <LogOut className="h-4 w-4" /> Sign out
-              </button>
-            </div>
+            <div className="text-xl font-semibold text-slate-900">{stats.fullyVerified}</div>
+            <div className="text-xs text-slate-500">{stats.totalCalls ? ((stats.fullyVerified / stats.totalCalls) * 100).toFixed(1) : 0}% success rate</div>
           </div>
-        </header>
-
-        {completedCalls.length > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <CheckCircle className="h-4 w-4 text-emerald-600" />
-                <span className="text-xs font-medium text-slate-500">Fully Verified</span>
-              </div>
-              <div className="text-xl font-semibold text-slate-900">{stats.fullyVerified}</div>
-              <div className="text-xs text-slate-500">{stats.totalCalls ? ((stats.fullyVerified / stats.totalCalls) * 100).toFixed(1) : 0}% success rate</div>
+          <div className="card p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <span className="text-xs font-medium text-slate-500">Partial Verification</span>
             </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="h-4 w-4 text-amber-600" />
-                <span className="text-xs font-medium text-slate-500">Partial Verification</span>
-              </div>
-              <div className="text-xl font-semibold text-slate-900">{stats.partiallyVerified}</div>
-              <div className="text-xs text-slate-500">{stats.totalCalls ? ((stats.partiallyVerified / stats.totalCalls) * 100).toFixed(1) : 0}% of calls</div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="h-4 w-4 text-slate-600" />
-                <span className="text-xs font-medium text-slate-500">Avg Duration</span>
-              </div>
-              <div className="text-xl font-semibold text-slate-900">{stats.avgDuration}s</div>
-              <div className="text-xs text-slate-500">{Math.floor(stats.avgDuration / 60)}m {stats.avgDuration % 60}s per call</div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <Activity className="h-4 w-4 text-slate-600" />
-                <span className="text-xs font-medium text-slate-500">Avg Confidence</span>
-              </div>
-              <div className="text-xl font-semibold text-slate-900">{stats.avgConfidence}%</div>
-              <div className="text-xs text-slate-500">Verification confidence</div>
-            </div>
+            <div className="text-xl font-semibold text-slate-900">{stats.partiallyVerified}</div>
+            <div className="text-xs text-slate-500">{stats.totalCalls ? ((stats.partiallyVerified / stats.totalCalls) * 100).toFixed(1) : 0}% of calls</div>
           </div>
-        )}
-
-        <div className="card-elevated mb-4 md:mb-6">
-          <div className="border-b border-slate-200 overflow-x-auto">
-            <nav className="flex min-w-0 gap-1 p-1" aria-label="Tabs">
-              {[
-                { id: 'import', label: 'Import Customers', icon: Upload },
-                { id: 'schedule', label: 'Schedule Calls', icon: Calendar },
-                { id: 'results', label: 'Verification Results', icon: CheckCircle },
-                { id: 'history', label: 'History & Archive', icon: Archive },
-                { id: 'verification', label: 'Verification Config', icon: Shield },
-                { id: 'settings', label: 'API Settings', icon: Settings },
-                { id: 'api-docs', label: 'API Documentation', icon: FileText },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-3 py-3 text-sm font-medium whitespace-nowrap rounded-t-lg border-b-2 transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-slate-800 text-slate-900 bg-slate-50'
-                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50/50'
-                  }`}
-                >
-                  <tab.icon className="h-4 w-4 shrink-0" />
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
+          <div className="card p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Clock className="h-4 w-4 text-slate-600" />
+              <span className="text-xs font-medium text-slate-500">Avg Duration</span>
+            </div>
+            <div className="text-xl font-semibold text-slate-900">{stats.avgDuration}s</div>
+            <div className="text-xs text-slate-500">{Math.floor(stats.avgDuration / 60)}m {stats.avgDuration % 60}s per call</div>
           </div>
-          <div className="p-4 md:p-6">
+          <div className="card p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Activity className="h-4 w-4 text-slate-600" />
+              <span className="text-xs font-medium text-slate-500">Avg Confidence</span>
+            </div>
+            <div className="text-xl font-semibold text-slate-900">{stats.avgConfidence}%</div>
+            <div className="text-xs text-slate-500">Verification confidence</div>
+          </div>
+        </div>
+      )}
 
-            {activeTab === 'import' && (
+      <div className="card-elevated">
+        <div className="p-4 md:p-6">
+          {activeTab === 'import' && (
               <div>
                 <div className="info-box mb-6">
                   <h3 className="info-box-title">
@@ -3582,13 +3568,11 @@ You are a professional verification agent calling to confirm customer identity a
                   </div>
 
                   <button
-
+                    type="button"
+                    onClick={saveSettings}
                     className="w-full px-6 py-3 btn-primary transition-colors font-medium shadow-md"
-
                   >
-
                     Save Configuration
-
                   </button>
 
                   <div className="mt-6 p-5 bg-slate-50 rounded-lg border">
@@ -3888,9 +3872,7 @@ You are a professional verification agent calling to confirm customer identity a
 
         </div>
 
-      </div>
-
-    </div>
+    </DashboardLayout>
 
   );
 

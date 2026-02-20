@@ -16,8 +16,11 @@ import logging
 import asyncio
 
 from config import API_KEYS
-from database import init_db
-from auth import verify_jwt_or_api_key
+from database import init_db, get_db
+from sqlalchemy.orm import Session
+from auth import verify_jwt_or_api_key, get_current_user_jwt
+import customer_service as cs
+import settings_service as ss
 from routers.auth_router import router as auth_router
 
 logging.basicConfig(
@@ -70,8 +73,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage for API access (in production, use a database)
-customers_db = []
 calls_db = []
 completed_calls_db = []
 
@@ -261,7 +262,7 @@ async def import_from_crm(config: ApiConfig):
         raise HTTPException(status_code=500, detail=f"Error importing from CRM: {str(e)}")
 
 @app.post("/api/customers/import-excel")
-async def import_from_excel(file: UploadFile = File(...)):
+async def import_from_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
     logger.info(f"📊 Excel import request received: {file.filename}")
     try:
         import pandas as pd
@@ -345,9 +346,7 @@ async def import_from_excel(file: UploadFile = File(...)):
                 continue
             
             customer_id = str(row.get('customerId', f"CUST-{datetime.now().timestamp()}-{idx}")).strip()
-            
-            customer = {
-                "id": len(customers_db) + 1,
+            d = {
                 "customerId": customer_id,
                 "firstName": str(row.get('firstName', '')).strip(),
                 "lastName": str(row.get('lastName', '')).strip(),
@@ -362,21 +361,19 @@ async def import_from_excel(file: UploadFile = File(...)):
                 "previousAttempts": 0,
                 "lastContactDate": None
             }
-            
-            # Check if customer already exists
-            existing = next((c for c in customers_db if c.get("customerId") == customer_id), None)
-            if existing:
-                logger.info(f"⚠️ Customer {customer_id} already exists, skipping duplicate")
-                skipped_count += 1
-            else:
-                customers_db.append(customer)
+            added = cs.add_customer(db, d)
+            if added:
                 stored_count += 1
-                logger.info(f"✅ Stored customer: {customer['firstName']} {customer['lastName']} ({customer_id})")
-            
-            customers.append(customer)
+                customers.append(added)
+                logger.info(f"✅ Stored customer: {d['firstName']} {d['lastName']} ({customer_id})")
+            else:
+                skipped_count += 1
+                customers.append({**d, "id": None})
+                logger.info(f"⚠️ Customer {customer_id} already exists, skipping duplicate")
         
+        _, total_in_db = cs.list_customers(db, limit=1, offset=0)
         logger.info(f"📊 Excel import completed: {stored_count} new customers stored, {skipped_count} skipped (duplicates or invalid)")
-        logger.info(f"📈 Total customers in database: {len(customers_db)}")
+        logger.info(f"📈 Total customers in database: {total_in_db}")
         
         return {
             "success": True,
@@ -409,7 +406,7 @@ class ScheduleCallRequestWithConfig(BaseModel):
     crmEndpoint: Optional[str] = None
 
 @app.post("/api/customers/import-batch")
-async def import_customers_batch(batch: BatchCustomerImport):
+async def import_customers_batch(batch: BatchCustomerImport, db: Session = Depends(get_db)):
     """
     Public endpoint to import customers in batch (no API key required)
     Used by frontend Excel import
@@ -424,17 +421,7 @@ async def import_customers_batch(batch: BatchCustomerImport):
             if not customer_id:
                 skipped_count += 1
                 continue
-            
-            # Check if customer already exists
-            existing = next((c for c in customers_db if c.get("customerId") == customer_id), None)
-            if existing:
-                logger.info(f"⚠️ Customer {customer_id} already exists, skipping")
-                skipped_count += 1
-                continue
-            
-            # Create customer record
-            customer = {
-                "id": len(customers_db) + 1,
+            d = {
                 "customerId": customer_id,
                 "firstName": customer_data.get("firstName", "").strip(),
                 "lastName": customer_data.get("lastName", "").strip(),
@@ -450,16 +437,20 @@ async def import_customers_batch(batch: BatchCustomerImport):
                 "lastContactDate": None,
                 "metadata": customer_data.get("metadata")
             }
-            
-            customers_db.append(customer)
-            stored_count += 1
-            logger.info(f"✅ Stored customer: {customer['firstName']} {customer['lastName']} ({customer_id})")
+            added = cs.add_customer(db, d)
+            if added:
+                stored_count += 1
+                logger.info(f"✅ Stored customer: {d['firstName']} {d['lastName']} ({customer_id})")
+            else:
+                skipped_count += 1
+                logger.info(f"⚠️ Customer {customer_id} already exists, skipping")
         except Exception as e:
             logger.error(f"❌ Error importing customer: {str(e)}")
             skipped_count += 1
     
+    _, total_in_db = cs.list_customers(db, limit=1, offset=0)
     logger.info(f"📊 Batch import completed: {stored_count} stored, {skipped_count} skipped")
-    logger.info(f"📈 Total customers in database: {len(customers_db)}")
+    logger.info(f"📈 Total customers in database: {total_in_db}")
     
     return {
         "success": True,
@@ -470,7 +461,7 @@ async def import_customers_batch(batch: BatchCustomerImport):
     }
 
 @app.post("/api/calls/schedule")
-async def schedule_calls(request: ScheduleCallRequestWithConfig):
+async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = Depends(get_db)):
     logger.info(f"📞 Call scheduling request received: {len(request.customerIds)} customers, date={request.scheduledDate}, time={request.scheduledTime}, timezone={request.timezone}")
     
     if not request.vapiApiKey or not request.vapiPhoneNumberId or not request.vapiAssistantId:
@@ -501,9 +492,7 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig):
         async with httpx.AsyncClient() as client:
             for customer_id in request.customerIds:
                 logger.info(f"📋 Processing customer: {customer_id}")
-                # Fetch customer data from database
-                customer = next((c for c in customers_db if c.get("customerId") == customer_id or str(c.get("id")) == customer_id), None)
-                
+                customer = cs.get_by_customer_id(db, customer_id)
                 if not customer:
                     logger.error(f"❌ Customer {customer_id} not found in database")
                     raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
@@ -781,7 +770,7 @@ async def api_health():
     }
 
 @app.post("/api/v1/customers", dependencies=[Depends(verify_jwt_or_api_key)])
-async def create_customer(customer: CustomerCreate):
+async def create_customer(customer: CustomerCreate, db: Session = Depends(get_db)):
     """
     Create a new customer for verification
     
@@ -789,49 +778,27 @@ async def create_customer(customer: CustomerCreate):
     Compatible with n8n, Zapier, and other automation tools.
     """
     logger.info(f"👤 Creating customer: {customer.customerId} - {customer.firstName} {customer.lastName}")
-    
-    # Check if customer already exists
-    existing = next((c for c in customers_db if c.get("customerId") == customer.customerId), None)
-    if existing:
-        logger.warning(f"⚠️ Customer {customer.customerId} already exists, updating instead")
-        # Update existing customer
-        existing.update({
-            **customer.dict(),
-            "importDate": datetime.now().isoformat(),
-            "previousAttempts": existing.get("previousAttempts", 0),
-            "lastContactDate": existing.get("lastContactDate")
-        })
-        logger.info(f"✅ Updated existing customer: {customer.customerId}")
-        return {
-            "success": True,
-            "message": "Customer updated successfully",
-            "customer": existing,
-            "id": existing.get("id")
-        }
-    
-    customer_data = {
-        "id": len(customers_db) + 1,
+    d = {
         **customer.dict(),
         "importDate": datetime.now().isoformat(),
         "previousAttempts": 0,
         "lastContactDate": None
     }
-    customers_db.append(customer_data)
-    logger.info(f"✅ Customer created successfully: {customer.customerId} (ID: {customer_data['id']})")
-    logger.info(f"📈 Total customers in database: {len(customers_db)}")
-    
+    result = cs.upsert_customer(db, d)
+    logger.info(f"✅ Customer created/updated: {customer.customerId} (ID: {result['id']})")
     return {
         "success": True,
         "message": "Customer created successfully",
-        "customer": customer_data,
-        "id": customer_data["id"]
+        "customer": result,
+        "id": result["id"]
     }
 
 @app.get("/api/v1/customers", dependencies=[Depends(verify_jwt_or_api_key)])
 async def list_customers(
     status: Optional[str] = None,
     limit: Optional[int] = 100,
-    offset: Optional[int] = 0
+    offset: Optional[int] = 0,
+    db: Session = Depends(get_db)
 ):
     """
     List all customers
@@ -841,31 +808,25 @@ async def list_customers(
     - limit: Maximum number of results (default: 100)
     - offset: Pagination offset (default: 0)
     """
-    filtered = customers_db
-    if status:
-        filtered = [c for c in filtered if c.get("status") == status]
-    
-    total = len(filtered)
-    paginated = filtered[offset:offset + limit]
-    
+    paginated, total = cs.list_customers(db, status=status, limit=limit or 100, offset=offset or 0)
     return {
         "success": True,
         "customers": paginated,
         "total": total,
-        "limit": limit,
-        "offset": offset
+        "limit": limit or 100,
+        "offset": offset or 0
     }
 
 @app.get("/api/v1/customers/{customer_id}", dependencies=[Depends(verify_jwt_or_api_key)])
-async def get_customer(customer_id: str):
+async def get_customer(customer_id: str, db: Session = Depends(get_db)):
     """Get a specific customer by ID"""
-    customer = next((c for c in customers_db if c.get("customerId") == customer_id or str(c.get("id")) == customer_id), None)
+    customer = cs.get_by_customer_id(db, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     return {"success": True, "customer": customer}
 
 @app.post("/api/v1/calls/schedule", dependencies=[Depends(verify_jwt_or_api_key)])
-async def schedule_calls_api(request: ScheduleCallAPI):
+async def schedule_calls_api(request: ScheduleCallAPI, db: Session = Depends(get_db)):
     """
     Schedule verification calls for customers
     
@@ -874,11 +835,9 @@ async def schedule_calls_api(request: ScheduleCallAPI):
     """
     if not request.customerIds:
         raise HTTPException(status_code=400, detail="At least one customer ID is required")
-    
-    # Validate customers exist
     valid_customers = []
     for cust_id in request.customerIds:
-        customer = next((c for c in customers_db if c.get("customerId") == cust_id or str(c.get("id")) == cust_id), None)
+        customer = cs.get_by_customer_id(db, cust_id)
         if customer:
             valid_customers.append(customer)
         else:
@@ -1034,12 +993,13 @@ async def custom_webhook(payload: dict, api_key: Optional[str] = Depends(optiona
     }
 
 @app.get("/api/v1/stats", dependencies=[Depends(verify_jwt_or_api_key)])
-async def get_statistics():
+async def get_statistics(db: Session = Depends(get_db)):
     """Get system statistics"""
+    total_customers = cs.count_customers(db)
     return {
         "success": True,
         "statistics": {
-            "totalCustomers": len(customers_db),
+            "totalCustomers": total_customers,
             "scheduledCalls": len([c for c in calls_db if c.get("status") == "scheduled"]),
             "completedCalls": len(completed_calls_db),
             "fullyVerified": len([c for c in completed_calls_db if c.get("callOutcome") == "fully_verified"]),
@@ -1049,6 +1009,18 @@ async def get_statistics():
         },
         "timestamp": datetime.now().isoformat()
     }
+
+@app.get("/api/v1/settings", dependencies=[Depends(get_current_user_jwt)])
+async def get_settings(user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    """Get current user's integration settings (CRM + Vapi). Requires JWT."""
+    config = ss.get_settings(db, user.id)
+    return {"success": True, "config": config or {"crmEndpoint": "", "crmApiKey": "", "vapiApiKey": "", "vapiPhoneNumberId": "", "vapiAssistantId": "", "webhookUrl": ""}}
+
+@app.put("/api/v1/settings", dependencies=[Depends(get_current_user_jwt)])
+async def put_settings(payload: ApiConfig, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    """Save current user's integration settings. Requires JWT."""
+    config = ss.upsert_settings(db, user.id, payload.dict())
+    return {"success": True, "config": config}
 
 @app.get("/api/v1/api-key/info")
 async def api_key_info():
