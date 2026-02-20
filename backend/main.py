@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,13 +10,16 @@ from dotenv import load_dotenv
 import httpx
 import json
 from datetime import datetime
-import hashlib
 import secrets
 import pytz
 import logging
 import asyncio
 
-# Configure logging
+from config import API_KEYS
+from database import init_db
+from auth import verify_jwt_or_api_key
+from routers.auth_router import router as auth_router
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -25,39 +29,39 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    if not os.getenv("API_KEYS"):
+        print("Default API Key generated:", API_KEYS[0])
+        print("Set API_KEYS in .env for production.")
+    yield
+
+
 app = FastAPI(
     title="CRM Verification System API",
     version="1.0.0",
     description="API for CRM Verification System - Integrate with n8n, Zapier, and other automation tools",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
-# API Key authentication
 security = HTTPBearer()
-API_KEYS = os.getenv("API_KEYS", "").split(",") if os.getenv("API_KEYS") else []
-# Generate default API key if none exists
-if not API_KEYS:
-    default_key = hashlib.sha256(f"default_{datetime.now().isoformat()}".encode()).hexdigest()[:32]
-    API_KEYS = [default_key]
-    print(f"⚠️  Default API Key generated: {default_key}")
-    print("⚠️  Set API_KEYS environment variable for production!")
+if not os.getenv("API_KEYS"):
+    print("Default API Key generated (see console on first request). Set API_KEYS in .env for production.")
 
-def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security)):
-    token = credentials.credentials
-    if token not in API_KEYS:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return token
-
-# Optional API key (for endpoints that work with or without auth)
-async def optional_api_key(authorization: Optional[str] = Header(None, alias="Authorization")):
+def optional_api_key(authorization: Optional[str] = Header(None, alias="Authorization")):
     if authorization and authorization.startswith("Bearer "):
         token = authorization.replace("Bearer ", "")
         if token in API_KEYS:
             return token
     return None
 
+
+app.include_router(auth_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins for API access (can be restricted in production)
@@ -776,7 +780,7 @@ async def api_health():
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/api/v1/customers", dependencies=[Depends(verify_api_key)])
+@app.post("/api/v1/customers", dependencies=[Depends(verify_jwt_or_api_key)])
 async def create_customer(customer: CustomerCreate):
     """
     Create a new customer for verification
@@ -823,7 +827,7 @@ async def create_customer(customer: CustomerCreate):
         "id": customer_data["id"]
     }
 
-@app.get("/api/v1/customers", dependencies=[Depends(verify_api_key)])
+@app.get("/api/v1/customers", dependencies=[Depends(verify_jwt_or_api_key)])
 async def list_customers(
     status: Optional[str] = None,
     limit: Optional[int] = 100,
@@ -852,7 +856,7 @@ async def list_customers(
         "offset": offset
     }
 
-@app.get("/api/v1/customers/{customer_id}", dependencies=[Depends(verify_api_key)])
+@app.get("/api/v1/customers/{customer_id}", dependencies=[Depends(verify_jwt_or_api_key)])
 async def get_customer(customer_id: str):
     """Get a specific customer by ID"""
     customer = next((c for c in customers_db if c.get("customerId") == customer_id or str(c.get("id")) == customer_id), None)
@@ -860,7 +864,7 @@ async def get_customer(customer_id: str):
         raise HTTPException(status_code=404, detail="Customer not found")
     return {"success": True, "customer": customer}
 
-@app.post("/api/v1/calls/schedule", dependencies=[Depends(verify_api_key)])
+@app.post("/api/v1/calls/schedule", dependencies=[Depends(verify_jwt_or_api_key)])
 async def schedule_calls_api(request: ScheduleCallAPI):
     """
     Schedule verification calls for customers
@@ -910,7 +914,7 @@ async def schedule_calls_api(request: ScheduleCallAPI):
         "count": len(scheduled_calls)
     }
 
-@app.get("/api/v1/calls", dependencies=[Depends(verify_api_key)])
+@app.get("/api/v1/calls", dependencies=[Depends(verify_jwt_or_api_key)])
 async def list_calls(
     status: Optional[str] = None,
     batchId: Optional[str] = None,
@@ -943,7 +947,7 @@ async def list_calls(
         "offset": offset
     }
 
-@app.get("/api/v1/calls/{call_id}", dependencies=[Depends(verify_api_key)])
+@app.get("/api/v1/calls/{call_id}", dependencies=[Depends(verify_jwt_or_api_key)])
 async def get_call(call_id: str):
     """Get a specific call by ID or Vapi Call ID"""
     call = next((c for c in calls_db + completed_calls_db if c.get("vapiCallId") == call_id or str(c.get("id")) == call_id), None)
@@ -951,7 +955,7 @@ async def get_call(call_id: str):
         raise HTTPException(status_code=404, detail="Call not found")
     return {"success": True, "call": call}
 
-@app.get("/api/v1/calls/results/completed", dependencies=[Depends(verify_api_key)])
+@app.get("/api/v1/calls/results/completed", dependencies=[Depends(verify_jwt_or_api_key)])
 async def get_completed_calls(
     batchId: Optional[str] = None,
     outcome: Optional[str] = None,
@@ -1029,7 +1033,7 @@ async def custom_webhook(payload: dict, api_key: Optional[str] = Depends(optiona
         "timestamp": datetime.now().isoformat()
     }
 
-@app.get("/api/v1/stats", dependencies=[Depends(verify_api_key)])
+@app.get("/api/v1/stats", dependencies=[Depends(verify_jwt_or_api_key)])
 async def get_statistics():
     """Get system statistics"""
     return {
@@ -1078,7 +1082,7 @@ class ApiKeyResponse(BaseModel):
     createdAt: str
     prefix: str
 
-@app.post("/api/v1/api-keys/generate", dependencies=[Depends(verify_api_key)])
+@app.post("/api/v1/api-keys/generate", dependencies=[Depends(verify_jwt_or_api_key)])
 async def generate_api_key(request: ApiKeyCreate):
     """
     Generate a new API key
@@ -1116,7 +1120,7 @@ async def generate_api_key(request: ApiKeyCreate):
         "warning": "Save this key immediately. It cannot be retrieved later."
     }
 
-@app.get("/api/v1/api-keys/list", dependencies=[Depends(verify_api_key)])
+@app.get("/api/v1/api-keys/list", dependencies=[Depends(verify_jwt_or_api_key)])
 async def list_api_keys():
     """
     List all API keys (prefixes only for security)

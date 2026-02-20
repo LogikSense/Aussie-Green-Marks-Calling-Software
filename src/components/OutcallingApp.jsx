@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
-import { Phone, Upload, Calendar, Download, CheckCircle, XCircle, Clock, Database, Settings, PlayCircle, Shield, AlertCircle, Users, Activity, FileSpreadsheet, X, ArrowRight, Wifi, WifiOff, Loader, Archive, History, FileText, Key, Copy, Eye, EyeOff } from 'lucide-react';
+import { Phone, Upload, Calendar, Download, CheckCircle, XCircle, Clock, Database, Settings, PlayCircle, Shield, AlertCircle, Users, Activity, FileSpreadsheet, X, ArrowRight, Wifi, WifiOff, Loader, Archive, History, FileText, Key, Copy, Eye, EyeOff, LogOut } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
 
-// API base URL - use environment variable in production, fallback to relative path for dev
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 const OutcallingApp = () => {
-
+  const { user, logout, getAuthHeaders } = useAuth();
   const [activeTab, setActiveTab] = useState('import');
 
   const [customers, setCustomers] = useState([]);
@@ -591,7 +591,8 @@ const OutcallingApp = () => {
         const response = await fetch(`${API_BASE_URL}/api/customers/import-batch`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             customers: customersForBackend
@@ -679,7 +680,8 @@ const OutcallingApp = () => {
       const response = await fetch(`${API_BASE_URL}/api/crm/test-connection`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           crmEndpoint: apiConfig.crmEndpoint,
@@ -757,18 +759,13 @@ const OutcallingApp = () => {
 
   // Generate API Key
   const generateApiKey = async () => {
-    if (!currentApiKey) {
-      alert('Please set your current API key first. Check the backend console for the default key or set it in your .env file.');
-      return;
-    }
-
     setGeneratingApiKey(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/api-keys/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentApiKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           name: apiKeyName || undefined,
@@ -824,7 +821,8 @@ const OutcallingApp = () => {
       const response = await fetch(`${API_BASE_URL}/api/vapi/test-connection`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           vapiApiKey: apiConfig.vapiApiKey
@@ -1158,7 +1156,8 @@ You are a professional verification agent calling to confirm customer identity a
       const response = await fetch(`${API_BASE_URL}/api/calls/schedule`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
         },
         body: JSON.stringify(requestBody)
       });
@@ -1477,6 +1476,17 @@ You are a professional verification agent calling to confirm customer identity a
                 <div className="text-xs font-medium text-slate-500">Completed</div>
                 <div className="text-lg font-semibold text-slate-900">{completedCalls.length}</div>
               </div>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <span>{user?.email || user?.full_name || 'User'}</span>
+              <button
+                type="button"
+                onClick={logout}
+                className="btn-secondary flex items-center gap-1.5 py-1.5 px-2.5 text-xs"
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4" /> Sign out
+              </button>
             </div>
           </div>
         </header>

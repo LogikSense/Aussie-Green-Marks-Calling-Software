@@ -8,3 +8,6 @@ openpyxl
 pydantic
 python-jose[cryptography]
 pytz
+bcrypt
+sqlalchemy
+psycopg2-binary
