@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON, Float
 from sqlalchemy.sql import func
 from database import Base
 
@@ -47,3 +47,67 @@ class UserSettings(Base):
     vapi_assistant_id = Column(String(255), nullable=True, default="")
     webhook_url = Column(String(512), nullable=True, default="")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    vapi_assistant_id = Column(String(255), nullable=True)
+    status = Column(String(50), default="active") # active, paused, completed
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    total_leads = Column(Integer, default=0)
+    calls_made = Column(Integer, default=0)
+    success_rate = Column(String(50), default="0%")
+
+
+class CampaignLead(Base):
+    __tablename__ = "campaign_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, nullable=False)
+    customer_id = Column(String(255), nullable=False) # Maps to Customer.customer_id
+    status = Column(String(50), default="pending") # pending, calling, completed, failed
+    vapi_call_id = Column(String(255), nullable=True)
+    scheduled_at = Column(DateTime(timezone=True), nullable=True)
+    result = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Wallet(Base):
+    __tablename__ = "wallets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, unique=True)
+    balance = Column(Float, default=0.0)
+    currency = Column(String(10), default="AUD")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False)
+    amount = Column(Float, nullable=False)
+    type = Column(String(50), nullable=False) # topup, usage
+    description = Column(String(255), nullable=True)
+    status = Column(String(50), default="completed") # pending, completed, failed
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class TwilioPhoneNumber(Base):
+    __tablename__ = "twilio_phone_numbers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    phone_number = Column(String(50), unique=True, index=True, nullable=False)
+    friendly_name = Column(String(255), nullable=True)
+    locality = Column(String(100), nullable=True)
+    region = Column(String(100), nullable=True)
+    assigned_to = Column(Integer, nullable=True) # user_id
+    assignment_type = Column(String(50), nullable=True) # primary, secondary
+    status = Column(String(50), default="active") # active, released
+    capabilities = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+

@@ -17,5 +17,5 @@ def get_db():
 
 
 def init_db():
-    from models import User, Customer, UserSettings
+    from models import User, Customer, UserSettings, Campaign, CampaignLead, Wallet, Transaction
     Base.metadata.create_all(bind=engine)

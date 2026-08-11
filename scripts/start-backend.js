@@ -37,7 +37,7 @@ function installAndStart() {
     ? path.join(backendDir, 'venv', 'Scripts', 'pip.exe')
     : path.join(backendDir, 'venv', 'bin', 'pip');
   
-  const installProcess = spawn(pipPath, ['install', '-q', '-r', 'requirements.txt'], {
+  const installProcess = spawn(`"${pipPath}"`, ['install', '-q', '-r', 'requirements.txt'], {
     cwd: backendDir,
     stdio: 'inherit',
     shell: true
@@ -51,7 +51,7 @@ function installAndStart() {
         ? path.join(backendDir, 'venv', 'Scripts', 'python.exe')
         : path.join(backendDir, 'venv', 'bin', 'python');
       
-      const serverProcess = spawn(pythonPath, [mainPy], {
+      const serverProcess = spawn(`"${pythonPath}"`, [`"${mainPy}"`], {
         cwd: backendDir,
         stdio: 'inherit',
         shell: true

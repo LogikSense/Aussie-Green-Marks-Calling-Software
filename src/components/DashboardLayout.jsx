@@ -1,162 +1,153 @@
 import React, { useState } from 'react';
-import {
-  Upload,
-  Calendar,
-  CheckCircle,
-  Archive,
-  Shield,
-  Settings,
-  FileText,
-  LogOut,
-  Menu,
-  X,
-  Phone,
-  Users,
+import { 
+  LayoutDashboard, 
+  PhoneCall, 
+  BarChart3, 
+  CalendarCheck, 
+  Users, 
+  Zap, 
+  Mic2, 
+  FileText, 
+  CreditCard, 
+  Settings, 
+  Bell, 
+  LogOut, 
+  Menu, 
+  X, 
+  Search,
+  ChevronRight,
+  User,
   Activity,
+  History,
+  Moon,
+  Sun
 } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 const NAV_ITEMS = [
-  { id: 'import', label: 'Import', icon: Upload },
-  { id: 'schedule', label: 'Schedule', icon: Calendar },
-  { id: 'results', label: 'Results', icon: CheckCircle },
-  { id: 'history', label: 'History', icon: Archive },
-  { id: 'verification', label: 'Verification', icon: Shield },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'campaigns', label: 'Campaigns', icon: PhoneCall },
+  { id: 'manual-calling', label: 'Manual Calling', icon: PhoneCall },
+  { id: 'agents', label: 'AI Agents', icon: Mic2 },
+  { id: 'history', label: 'Call History', icon: History },
+  { id: 'appointments', label: 'Appointments', icon: CalendarCheck },
+  { id: 'customers', label: 'Customers', icon: Users },
+  { id: 'insights', label: 'AI Insights', icon: Zap },
+  { id: 'recordings', label: 'Call Recordings', icon: Mic2 },
+  { id: 'billing', label: 'Billing', icon: CreditCard },
+  { id: 'admin-numbers', label: 'Phone Numbers', icon: Settings },
   { id: 'settings', label: 'Settings', icon: Settings },
-  { id: 'api-docs', label: 'API Docs', icon: FileText },
 ];
 
-const TAB_TITLES = {
-  import: 'Import Customers',
-  schedule: 'Schedule Calls',
-  results: 'Verification Results',
-  history: 'History & Archive',
-  verification: 'Verification Config',
-  settings: 'API Settings',
-  'api-docs': 'API Documentation',
-};
-
-export default function DashboardLayout({
-  activeTab,
-  setActiveTab,
-  user,
-  logout,
-  stats = {},
-  children,
-}) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { customers = 0, scheduledCalls = 0, completedCalls = 0 } = stats;
-
-  const closeSidebar = () => setSidebarOpen(false);
+export default function DashboardLayout({ activeTab, setActiveTab, children }) {
+  const { user, logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      {/* Sidebar overlay (mobile) */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden"
-          onClick={closeSidebar}
-          aria-hidden="true"
-        />
-      )}
-
+    <div className="min-h-screen bg-background text-foreground flex overflow-hidden">
       {/* Sidebar */}
-      <aside
-        className={`fixed top-0 left-0 z-50 h-full w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ease-out lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+      <aside 
+        className={cn(
+          "relative z-40 bg-background border-r border-border transition-all duration-300 ease-in-out flex flex-col shrink-0",
+          sidebarOpen ? "w-64" : "w-20"
+        )}
       >
-        <div className="flex items-center justify-between h-14 px-4 border-b border-slate-700/50 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
-              <Phone className="w-4 h-4" />
-            </div>
-            <span className="font-semibold text-slate-100">Voice CRM</span>
+        <div className="h-16 flex items-center px-6 border-b border-border">
+          <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shrink-0">
+            <Zap className="w-5 h-5 text-white" />
           </div>
-          <button
-            type="button"
-            onClick={closeSidebar}
-            className="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
-            aria-label="Close menu"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {sidebarOpen && (
+            <div className="ml-3">
+              <span className="font-bold text-base tracking-tight block">AGM Voice CRM</span>
+              <span className="text-xs text-muted-foreground font-medium">Call Management</span>
+            </div>
+          )}
         </div>
-        <nav className="flex-1 overflow-y-auto py-3 px-2">
+
+        <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1">
           {NAV_ITEMS.map((item) => (
             <button
               key={item.id}
-              type="button"
-              onClick={() => {
-                setActiveTab(item.id);
-                closeSidebar();
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === item.id
-                  ? 'bg-slate-700 text-white'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
+              onClick={() => setActiveTab(item.id)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative",
+                activeTab === item.id 
+                  ? "bg-primary/10 text-primary" 
+                  : "hover:bg-accent/50 text-muted-foreground hover:text-foreground"
+              )}
             >
-              <item.icon className="w-5 h-5 shrink-0 opacity-90" />
-              {item.label}
+              <item.icon className={cn(
+                "w-5 h-5 shrink-0 transition-transform duration-200",
+                activeTab === item.id ? "scale-110" : "group-hover:scale-110"
+              )} />
+              {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
             </button>
           ))}
         </nav>
-        <div className="p-3 border-t border-slate-700/50">
-          <div className="px-3 py-2 text-xs text-slate-400 truncate" title={user?.email}>
-            {user?.email || 'User'}
-          </div>
-          <button
-            type="button"
+
+        <div className="p-4 border-t border-border">
+          <button 
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all",
+              !sidebarOpen && "justify-center"
+            )}
           >
-            <LogOut className="w-4 h-4" />
-            Sign out
+            <LogOut className="w-5 h-5 shrink-0" />
+            {sidebarOpen && <span className="text-sm font-medium">Sign out</span>}
           </button>
         </div>
       </aside>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
-        {/* Top bar */}
-        <header className="sticky top-0 z-30 h-14 px-4 sm:px-6 flex items-center justify-between gap-4 bg-white border-b border-slate-200 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
-              aria-label="Open menu"
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-16 border-b border-border bg-background/50 backdrop-blur-xl sticky top-0 z-30 flex items-center justify-between px-8">
+          <div className="flex items-center gap-4 flex-1">
+            <button 
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 rounded-lg hover:bg-accent text-muted-foreground transition-colors"
             >
-              <Menu className="w-5 h-5" />
+              {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <h1 className="text-base font-semibold text-slate-900 truncate">
-              {TAB_TITLES[activeTab] || 'Dashboard'}
-            </h1>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden sm:flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium">
-                <Users className="w-3.5 h-3.5" />
-                {customers}
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 text-xs font-medium">
-                <Calendar className="w-3.5 h-3.5" />
-                {scheduledCalls}
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 text-xs font-medium">
-                <Activity className="w-3.5 h-3.5" />
-                {completedCalls}
-              </span>
+            <div className="max-w-md w-full relative hidden md:block">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input 
+                type="text" 
+                placeholder="Search..." 
+                className="w-full bg-accent/10 border-none rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground"
+              />
             </div>
-            <div className="lg:hidden flex items-center gap-2 text-slate-600 text-sm truncate max-w-[120px]">
-              {user?.email?.split('@')[0] || 'User'}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button className="relative p-2 rounded-lg hover:bg-accent text-muted-foreground">
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full border-2 border-background" />
+            </button>
+            <button 
+              onClick={toggleTheme}
+              className="p-2 rounded-lg hover:bg-accent text-muted-foreground transition-colors"
+              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            <div className="h-8 w-px bg-border mx-2" />
+            <div className="flex items-center gap-3 px-2 py-1 rounded-full hover:bg-accent transition-colors cursor-pointer group">
+              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+                <User className="w-4 h-4 text-primary" />
+              </div>
+              <div className="hidden lg:block text-left">
+                <p className="text-sm font-semibold leading-tight">{user?.email || 'Admin User'}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{user?.role || 'Administrator'}</p>
+              </div>
             </div>
           </div>
         </header>
 
-        {/* Content */}
-        <main className="flex-1 p-4 sm:p-6 overflow-auto">
-          <div className="max-w-6xl mx-auto">
+        <main className="flex-1 overflow-y-auto bg-background p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
             {children}
           </div>
         </main>
@@ -164,3 +155,4 @@ export default function DashboardLayout({
     </div>
   );
 }
+

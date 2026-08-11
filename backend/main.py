@@ -19,9 +19,11 @@ from config import API_KEYS
 from database import init_db, get_db
 from sqlalchemy.orm import Session
 from auth import verify_jwt_or_api_key, get_current_user_jwt
+from models import Campaign, CampaignLead, Customer, Wallet, Transaction
 import customer_service as cs
 import settings_service as ss
 from routers.auth_router import router as auth_router
+from routers.twilio_router import router as twilio_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,8 +51,24 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    lifespan=lifespan,
+    lifespan=lifespan
 )
+
+# Move CORSMiddleware to the top
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"INBOUND: {request.method} {request.url.path}")
+    response = await call_next(request)
+    logger.info(f"OUTBOUND: {response.status_code}")
+    return response
 
 security = HTTPBearer()
 if not os.getenv("API_KEYS"):
@@ -63,18 +81,8 @@ def optional_api_key(authorization: Optional[str] = Header(None, alias="Authoriz
             return token
     return None
 
-
 app.include_router(auth_router)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for API access (can be restricted in production)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-calls_db = []
-completed_calls_db = []
+app.include_router(twilio_router)
 
 class CustomerData(BaseModel):
     customerId: str
@@ -111,6 +119,9 @@ class VerificationConfig(BaseModel):
     verifyDOB: bool = False
     verifySSN: bool = False
     securityQuestion: bool = False
+
+class TopUpRequest(BaseModel):
+    amount: float
 
 @app.get("/")
 async def root():
@@ -405,6 +416,19 @@ class ScheduleCallRequestWithConfig(BaseModel):
     webhookUrl: Optional[str] = None
     crmEndpoint: Optional[str] = None
 
+class ManualCallRequest(BaseModel):
+    firstName: str
+    lastName: str
+    phone: str
+    countryCode: Optional[str] = "+1"
+    scheduledAt: Optional[str] = None # Time as HH:mm or full ISO
+    scheduledDate: Optional[str] = None # Date as YYYY-MM-DD
+    timezone: str = "America/New_York"
+    assistantId: Optional[str] = None
+    phoneNumberId: Optional[str] = None
+    vapiApiKey: Optional[str] = None
+    webhookUrl: Optional[str] = None
+
 @app.post("/api/customers/import-batch")
 async def import_customers_batch(batch: BatchCustomerImport, db: Session = Depends(get_db)):
     """
@@ -460,13 +484,160 @@ async def import_customers_batch(batch: BatchCustomerImport, db: Session = Depen
         "message": f"Successfully imported {stored_count} customers to backend database"
     }
 
+@app.post("/api/trigger-manual-call", dependencies=[Depends(get_current_user_jwt)])
+@app.post("/api/manual-call-trigger", dependencies=[Depends(get_current_user_jwt)])
+async def manual_dial(request: ManualCallRequest, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    """
+    Manually trigger a call. Can be immediate or scheduled.
+    """
+    print(f"DEBUG: Manual dial hit for {request.firstName}")
+    logger.info(f"☎️ Manual dial request: {request.firstName} {request.lastName} ({request.phone})")
+    
+    # 0. Check Wallet Balance
+    # Realistic AU Cost: ~0.15 USD (Vapi) + ~0.15 USD (ElevenLabs) + ~0.05 USD (Telco) = ~$0.35 USD/min
+    # In AUD: ~$0.55/min. We'll set a flat fee of $0.50 for the connection/trigger.
+    CALL_COST = 0.50 
+    wallet = get_or_create_wallet(db, user["id"])
+    if wallet.balance < CALL_COST:
+        raise HTTPException(
+            status_code=402, 
+            detail=f"Insufficient credits (${wallet.balance:.2f}). Please top up to make calls."
+        )
+
+    # 1. Get settings if not provided
+    vapi_key = request.vapiApiKey
+    assistant_id = request.assistantId
+    phone_number_id = request.phoneNumberId
+    webhook_url = request.webhookUrl
+    
+    if not vapi_key or not assistant_id or not phone_number_id:
+        settings = ss.get_settings(db, user.id)
+        if settings:
+            vapi_key = vapi_key or settings.get("vapiApiKey")
+            assistant_id = assistant_id or settings.get("vapiAssistantId")
+            phone_number_id = phone_number_id or settings.get("vapiPhoneNumberId")
+            webhook_url = webhook_url or settings.get("webhookUrl")
+            
+    if not vapi_key or not assistant_id or not phone_number_id:
+        raise HTTPException(status_code=400, detail="Voice provider configuration missing (API Key, Assistant ID, or Phone ID)")
+
+    # 2. Format phone number
+    clean_phone = "".join(filter(str.isdigit, request.phone))
+    code = request.countryCode.replace("+", "")
+    
+    if request.phone.startswith("+"):
+        phone = request.phone
+    else:
+        phone = f"+{code}{clean_phone}"
+
+    # 3. Handle scheduling if provided
+    earliest_at = None
+    if request.scheduledDate and request.scheduledAt:
+        try:
+            dt_str = f"{request.scheduledDate} {request.scheduledAt}"
+            tz = pytz.timezone(request.timezone)
+            local_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+            earliest_at = tz.localize(local_dt).isoformat()
+            logger.info(f"📅 Manual call scheduled for: {earliest_at}")
+        except Exception as e:
+            logger.error(f"❌ Scheduling error: {str(e)}")
+            raise HTTPException(status_code=400, detail="Invalid schedule format. Use YYYY-MM-DD and HH:mm")
+
+    # 4. Create or get "Manual Calls" campaign
+    from models import Campaign, CampaignLead
+    manual_camp = db.query(Campaign).filter(Campaign.name == "Manual Calls").first()
+    if not manual_camp:
+        manual_camp = Campaign(name="Manual Calls", description="Calls triggered manually from the dialer", status="active")
+        db.add(manual_camp)
+        db.commit()
+        db.refresh(manual_camp)
+
+    # 5. Create customer record
+    customer_id = f"manual-{clean_phone}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    customer_data = {
+        "customerId": customer_id,
+        "firstName": request.firstName,
+        "lastName": request.lastName,
+        "phone": phone,
+        "status": "scheduled" if earliest_at else "manual_dial"
+    }
+    cs.add_customer(db, customer_data)
+
+    # 6. Call Vapi API
+    call_data = {
+        "assistantId": assistant_id,
+        "phoneNumberId": phone_number_id,
+        "customer": {
+            "number": phone,
+            "name": f"{request.firstName} {request.lastName}".strip()
+        }
+    }
+    if earliest_at:
+        call_data["schedulePlan"] = {"earliestAt": earliest_at}
+    if webhook_url:
+        call_data["webhookUrl"] = webhook_url
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.vapi.ai/call",
+                headers={
+                    "Authorization": f"Bearer {vapi_key}",
+                    "Content-Type": "application/json"
+                },
+                json=call_data,
+                timeout=30.0
+            )
+            
+            if response.status_code >= 400:
+                logger.error(f"❌ Voice provider API error: {response.text}")
+                raise HTTPException(status_code=response.status_code, detail=f"Voice provider error: {response.text}")
+            
+            result = response.json()
+            call_id = result.get("id")
+            
+            # 7. Deduct from wallet & Log Transaction
+            wallet.balance -= CALL_COST
+            usage_trans = Transaction(
+                user_id=user["id"],
+                amount=-CALL_COST,
+                type="usage",
+                description=f"AI Call to {phone}",
+                status="completed"
+            )
+            db.add(usage_trans)
+
+            # 8. Record the lead
+            lead_status = "pending" if earliest_at else "calling"
+            lead = CampaignLead(
+                campaign_id=manual_camp.id,
+                customer_id=customer_id, # Use the generated ID
+                status=lead_status,
+                vapi_call_id=call_id,
+                result=result,
+                scheduled_at=datetime.fromisoformat(earliest_at.replace('Z', '+00:00')) if earliest_at else None
+            )
+            db.add(lead)
+            db.commit()
+            
+            msg = f"Call scheduled for {earliest_at}" if earliest_at else "Call initiated successfully"
+            return {
+                "success": True, 
+                "callId": call_id, 
+                "message": msg,
+                "new_balance": wallet.balance
+            }
+    except Exception as e:
+        logger.error(f"❌ Manual dial failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/calls/schedule")
 async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = Depends(get_db)):
     logger.info(f"📞 Call scheduling request received: {len(request.customerIds)} customers, date={request.scheduledDate}, time={request.scheduledTime}, timezone={request.timezone}")
     
     if not request.vapiApiKey or not request.vapiPhoneNumberId or not request.vapiAssistantId:
-        logger.error("❌ Vapi API configuration is incomplete")
-        raise HTTPException(status_code=400, detail="Vapi API configuration is incomplete")
+        logger.error("❌ Voice provider API configuration is incomplete")
+        raise HTTPException(status_code=400, detail="Voice provider API configuration is incomplete")
     
     # Convert scheduled date/time/timezone to ISO 8601 format
     try:
@@ -499,7 +670,7 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = D
                 
                 logger.info(f"✅ Found customer: {customer.get('firstName')} {customer.get('lastName')} ({customer_id})")
                 
-                # Build customer object for Vapi API
+                # Build customer object for voice provider API
                 customer_phone = customer.get("phone", "").strip()
                 if not customer_phone:
                     logger.error(f"❌ Customer {customer_id} has no phone number")
@@ -514,7 +685,7 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = D
                 
                 customer_name = f"{customer.get('firstName', '')} {customer.get('lastName', '')}".strip()
                 
-                # Build call data according to Vapi API specification
+                # Build call data according to voice provider API specification
                 call_data = {
                     "assistantId": request.vapiAssistantId,
                     "phoneNumberId": request.vapiPhoneNumberId,
@@ -536,7 +707,7 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = D
                 if request.webhookUrl:
                     call_data["webhookUrl"] = request.webhookUrl
                 
-                logger.info(f"🚀 Scheduling call to Vapi API for {customer_name} ({customer_phone}) at {earliest_at}")
+                logger.info(f"🚀 Scheduling call to voice provider for {customer_name} ({customer_phone}) at {earliest_at}")
                 logger.debug(f"📤 Call data: {json.dumps(call_data, indent=2)}")
                 
                 # Retry logic for Cloudflare protection (sometimes blocks requests)
@@ -600,7 +771,7 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = D
                 if not response:
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Failed to get response from Vapi API after {max_retries} attempts. Last error: {last_error}"
+                        detail=f"Failed to get response from voice provider after {max_retries} attempts. Last error: {last_error}"
                     )
                 
                 try:
@@ -610,7 +781,7 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = D
                     logger.error(f"Response text: {response.text[:500]}")
                     raise HTTPException(status_code=500, detail=f"Vapi API returned invalid response: {response.text[:200]}")
                 
-                logger.info(f"✅ Vapi API response received: {json.dumps(result, indent=2)}")
+                logger.info(f"✅ Voice provider response received: {json.dumps(result, indent=2)}")
                 
                 # Handle both single call response and batch response
                 call_id = result.get("id") if isinstance(result, dict) else None
@@ -619,7 +790,7 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = D
                     if result.get("results") and len(result["results"]) > 0:
                         call_id = result["results"][0].get("id")
                 
-                logger.info(f"✅ Call scheduled successfully: Vapi Call ID = {call_id}")
+                logger.info(f"✅ Call scheduled successfully: Call ID = {call_id}")
                 
                 scheduled_calls.append({
                     "customerId": customer_id,
@@ -648,20 +819,20 @@ async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = D
             error_message = error_json.get('message') or error_json.get('error') or error_text
         except:
             error_message = error_text or f"HTTP {e.response.status_code}"
-        logger.error(f"❌ Vapi API error (HTTP {e.response.status_code}): {error_message}")
-        raise HTTPException(status_code=e.response.status_code, detail=f"Vapi API error: {error_message}")
+        logger.error(f"❌ Voice provider error (HTTP {e.response.status_code}): {error_message}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Voice provider error: {error_message}")
     except Exception as e:
         logger.error(f"❌ Error scheduling calls: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error scheduling calls: {str(e)}")
 
-@app.post("/api/webhook/vapi")
-async def vapi_webhook(data: dict):
+@app.post("/api/webhook/call-status")
+async def voice_provider_webhook(data: dict):
     return {"success": True, "message": "Webhook received", "data": data}
 
-@app.post("/api/vapi/test-connection")
-async def test_vapi_connection(config: ApiConfig):
+@app.post("/api/provider/test-connection")
+async def test_provider_connection(config: ApiConfig):
     if not config.vapiApiKey:
-        raise HTTPException(status_code=400, detail="Vapi API key is required")
+        raise HTTPException(status_code=400, detail="Voice provider API key is required")
     
     try:
         async with httpx.AsyncClient() as client:
@@ -704,14 +875,14 @@ async def test_vapi_connection(config: ApiConfig):
             error_message = error_json.get('message') or error_json.get('error') or error_text
         except:
             error_message = error_text or f"HTTP {e.response.status_code}"
-        raise HTTPException(status_code=e.response.status_code, detail=f"Vapi API error: {error_message}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Voice provider API error: {error_message}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error testing Vapi connection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error testing voice provider connection: {str(e)}")
 
 @app.get("/api/calls/{call_id}/status")
 async def get_call_status(call_id: str, config: ApiConfig):
     if not config.vapiApiKey:
-        raise HTTPException(status_code=400, detail="Vapi API key is required")
+        raise HTTPException(status_code=400, detail="Voice provider API key is required")
     
     try:
         async with httpx.AsyncClient() as client:
@@ -728,9 +899,153 @@ async def get_call_status(call_id: str, config: ApiConfig):
             response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"Vapi API error: {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Voice provider API error: {e.response.text}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching call status: {str(e)}")
+
+# ============================================================================
+# CAMPAIGN MANAGEMENT
+# ============================================================================
+
+class CampaignCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    vapi_assistant_id: Optional[str] = None
+
+@app.get("/api/v1/campaigns", dependencies=[Depends(verify_jwt_or_api_key)])
+async def list_campaigns(db: Session = Depends(get_db)):
+    campaigns = db.query(Campaign).all()
+    return {"success": True, "campaigns": campaigns}
+
+@app.post("/api/v1/campaigns", dependencies=[Depends(verify_jwt_or_api_key)])
+async def create_campaign(data: CampaignCreate, db: Session = Depends(get_db)):
+    # Check if a campaign with this name already exists
+    existing = db.query(Campaign).filter(Campaign.name == data.name).first()
+    if existing:
+        # Update assistant if provided
+        if data.vapi_assistant_id:
+            existing.vapi_assistant_id = data.vapi_assistant_id
+            db.commit()
+            db.refresh(existing)
+        return {"success": True, "campaign": existing, "message": "Using existing campaign"}
+        
+    campaign = Campaign(
+        name=data.name, 
+        description=data.description,
+        vapi_assistant_id=data.vapi_assistant_id
+    )
+    db.add(campaign)
+    db.commit()
+    db.refresh(campaign)
+    return {"success": True, "campaign": campaign}
+
+@app.get("/api/v1/assistants", dependencies=[Depends(get_current_user_jwt)])
+async def list_assistants(user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    """Fetch list of assistants from voice provider using user's API key."""
+    settings = ss.get_settings(db, user.id)
+    if not settings or not settings.get("vapiApiKey"):
+        return {"success": True, "assistants": []}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                "https://api.vapi.ai/assistant",
+                headers={"Authorization": f"Bearer {settings['vapiApiKey']}"}
+            )
+            response.raise_for_status()
+            assistants = response.json()
+            # Returns a list of assistant objects
+            return {"success": True, "assistants": assistants}
+        except Exception as e:
+            logger.error(f"Failed to fetch assistants: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+@app.get("/api/v1/numbers", dependencies=[Depends(get_current_user_jwt)])
+async def list_numbers(user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    """Fetch list of phone numbers from voice provider using user's API key."""
+    settings = ss.get_settings(db, user.id)
+    if not settings or not settings.get("vapiApiKey"):
+        return {"success": True, "numbers": []}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                "https://api.vapi.ai/phone-number",
+                headers={"Authorization": f"Bearer {settings['vapiApiKey']}"}
+            )
+            response.raise_for_status()
+            numbers = response.json()
+            return {"success": True, "numbers": numbers}
+        except Exception as e:
+            logger.error(f"Failed to fetch phone numbers: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+@app.get("/api/v1/campaigns/{id}", dependencies=[Depends(verify_jwt_or_api_key)])
+async def get_campaign(id: int, db: Session = Depends(get_db)):
+    campaign = db.query(Campaign).filter(Campaign.id == id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    leads = db.query(CampaignLead).filter(CampaignLead.campaign_id == id).all()
+    return {"success": True, "campaign": campaign, "leads_count": len(leads)}
+
+@app.post("/api/v1/campaigns/{id}/leads", dependencies=[Depends(verify_jwt_or_api_key)])
+async def add_leads_to_campaign_batch(id: int, batch: BatchCustomerImport, db: Session = Depends(get_db)):
+    """
+    Import leads and associate them with a specific campaign.
+    """
+    campaign = db.query(Campaign).filter(Campaign.id == id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    stored_count = 0
+    duplicate_count = 0
+    leads_added = 0
+    
+    for customer_data in batch.customers:
+        try:
+            customer_id = customer_data.get("customerId")
+            if not customer_id:
+                continue
+                
+            # 1. Upsert Customer details
+            d = {
+                "customerId": customer_id,
+                "firstName": customer_data.get("firstName", "").strip(),
+                "lastName": customer_data.get("lastName", "").strip(),
+                "phone": customer_data.get("phone", "").strip(),
+                "email": customer_data.get("email", "").strip() if customer_data.get("email") else "",
+                "status": "ready_for_auditing",
+                "importDate": datetime.now().isoformat(),
+            }
+            cs.upsert_customer(db, d)
+            
+            # 2. Check if lead already in this campaign
+            existing_lead = db.query(CampaignLead).filter(
+                CampaignLead.campaign_id == id,
+                CampaignLead.customer_id == customer_id
+            ).first()
+            
+            if not existing_lead:
+                new_lead = CampaignLead(campaign_id=id, customer_id=customer_id)
+                db.add(new_lead)
+                leads_added += 1
+            else:
+                duplicate_count += 1
+                
+        except Exception as e:
+            logger.error(f"Error adding lead to campaign: {str(e)}")
+            
+    campaign.total_leads = (campaign.total_leads or 0) + leads_added
+    db.commit()
+    
+    return {
+        "success": True,
+        "campaign_id": id,
+        "added": leads_added,
+        "duplicates": duplicate_count,
+        "total": campaign.total_leads
+    }
 
 # ============================================================================
 # PUBLIC API ENDPOINTS FOR INTEGRATION (n8n, Zapier, etc.)
@@ -847,8 +1162,23 @@ async def schedule_calls_api(request: ScheduleCallAPI, db: Session = Depends(get
     batch_id = f"batch_{datetime.now().timestamp()}"
     
     for customer in valid_customers:
+        vapi_call_id = f"vapi_{secrets.token_hex(8)}"
+        
+        # Create CampaignLead in database
+        # For public API calls, we might not have a campaign_id, so we'll use a default or 0
+        lead = CampaignLead(
+            campaign_id=0, # Default for direct API calls
+            customer_id=customer.get("customerId"),
+            status="scheduled",
+            vapi_call_id=vapi_call_id,
+            scheduled_at=datetime.now() # Simplified for this API
+        )
+        db.add(lead)
+        db.commit()
+        db.refresh(lead)
+
         call_data = {
-            "id": len(calls_db) + len(scheduled_calls) + 1,
+            "id": lead.id,
             "batchId": batch_id,
             "customerId": customer.get("customerId"),
             "customerName": f"{customer.get('firstName')} {customer.get('lastName')}",
@@ -857,13 +1187,12 @@ async def schedule_calls_api(request: ScheduleCallAPI, db: Session = Depends(get
             "scheduledTime": request.scheduledTime,
             "timezone": request.timezone,
             "status": "scheduled",
-            "scheduledAt": datetime.now().isoformat(),
+            "scheduledAt": lead.created_at.isoformat(),
             "retryCount": 0,
             "maxRetries": request.maxRetries,
-            "vapiCallId": f"vapi_{secrets.token_hex(8)}"
+            "vapiCallId": vapi_call_id
         }
         scheduled_calls.append(call_data)
-        calls_db.append(call_data)
     
     return {
         "success": True,
@@ -876,106 +1205,199 @@ async def schedule_calls_api(request: ScheduleCallAPI, db: Session = Depends(get
 @app.get("/api/v1/calls", dependencies=[Depends(verify_jwt_or_api_key)])
 async def list_calls(
     status: Optional[str] = None,
-    batchId: Optional[str] = None,
     limit: Optional[int] = 100,
-    offset: Optional[int] = 0
+    offset: Optional[int] = 0,
+    db: Session = Depends(get_db)
 ):
     """
-    List all scheduled calls
-    
-    Query parameters:
-    - status: Filter by status (e.g., 'scheduled', 'completed')
-    - batchId: Filter by batch ID
-    - limit: Maximum number of results
-    - offset: Pagination offset
+    List all calls (campaign leads)
     """
-    filtered = calls_db + completed_calls_db
+    query = db.query(CampaignLead)
     if status:
-        filtered = [c for c in filtered if c.get("status") == status]
-    if batchId:
-        filtered = [c for c in filtered if c.get("batchId") == batchId]
+        query = query.filter(CampaignLead.status == status)
     
-    total = len(filtered)
-    paginated = filtered[offset:offset + limit]
+    total = query.count()
+    leads = query.offset(offset).limit(limit).all()
     
     return {
         "success": True,
-        "calls": paginated,
+        "calls": leads,
         "total": total,
         "limit": limit,
         "offset": offset
     }
 
-@app.get("/api/v1/calls/{call_id}", dependencies=[Depends(verify_jwt_or_api_key)])
-async def get_call(call_id: str):
+@app.get("/api/v1/calls/{call_id}", dependencies=[Depends(get_current_user_jwt)])
+async def get_call(call_id: str, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
     """Get a specific call by ID or Vapi Call ID"""
-    call = next((c for c in calls_db + completed_calls_db if c.get("vapiCallId") == call_id or str(c.get("id")) == call_id), None)
-    if not call:
+    lead = db.query(CampaignLead).filter(
+        (CampaignLead.vapi_call_id == call_id) | (CampaignLead.id == call_id)
+    ).first()
+    if not lead:
         raise HTTPException(status_code=404, detail="Call not found")
-    return {"success": True, "call": call}
+    return {"success": True, "call": lead}
+
+@app.post("/api/v1/calls/{call_id}/sync", dependencies=[Depends(get_current_user_jwt)])
+async def sync_call(call_id: str, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    """Manually sync call data from Vapi (needed for local development without webhooks)"""
+    lead = db.query(CampaignLead).filter(CampaignLead.vapi_call_id == call_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Call record not found")
+    
+    config = ss.get_settings(db, user.id)
+    vapi_key = config.vapi_api_key
+    
+    if not vapi_key:
+        return {"success": False, "message": "Vapi API key not configured in settings"}
+        
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.vapi.ai/call/{call_id}",
+                headers={"Authorization": f"Bearer {vapi_key}"},
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                vapi_data = response.json()
+                lead.result = vapi_data
+                status = vapi_data.get("status")
+                if status in ["ended", "completed"]:
+                    lead.status = "completed"
+                else:
+                    lead.status = status
+                db.commit()
+                return {"success": True, "call": lead}
+            else:
+                return {"success": False, "message": f"Vapi API returned {response.status_code}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @app.get("/api/v1/calls/results/completed", dependencies=[Depends(verify_jwt_or_api_key)])
 async def get_completed_calls(
-    batchId: Optional[str] = None,
-    outcome: Optional[str] = None,
     limit: Optional[int] = 100,
-    offset: Optional[int] = 0
+    offset: Optional[int] = 0,
+    db: Session = Depends(get_db)
 ):
     """
     Get completed call results
-    
-    Query parameters:
-    - batchId: Filter by batch ID
-    - outcome: Filter by outcome (e.g., 'fully_verified', 'partially_verified')
-    - limit: Maximum number of results
-    - offset: Pagination offset
     """
-    filtered = completed_calls_db
-    if batchId:
-        filtered = [c for c in filtered if c.get("batchId") == batchId]
-    if outcome:
-        filtered = [c for c in filtered if c.get("callOutcome") == outcome]
+    query = db.query(CampaignLead).filter(CampaignLead.status == "completed")
     
-    total = len(filtered)
-    paginated = filtered[offset:offset + limit]
+    total = query.count()
+    leads = query.offset(offset).limit(limit).all()
     
     return {
         "success": True,
-        "results": paginated,
+        "results": leads,
         "total": total,
         "limit": limit,
         "offset": offset
     }
 
 @app.post("/api/v1/webhooks/vapi")
-async def vapi_webhook_api(payload: dict, api_key: Optional[str] = Depends(optional_api_key)):
+async def vapi_webhook_api(payload: dict, db: Session = Depends(get_db)):
     """
-    Webhook endpoint for receiving Vapi call updates
-    
-    This endpoint can be configured in Vapi to receive call status updates.
-    Works with or without API key authentication.
+    Webhook endpoint for receiving Vapi call updates.
+    Updates CampaignLead status in database.
     """
     # Process webhook payload
-    call_id = payload.get("call", {}).get("id") or payload.get("id")
+    # Based on Vapi webhook schema
+    vapi_call_id = payload.get("call", {}).get("id") or payload.get("id")
     status = payload.get("status") or payload.get("call", {}).get("status")
     
+    if not vapi_call_id:
+        return {"success": False, "message": "No call ID found in payload"}
+
     # Update call status in database
-    call = next((c for c in calls_db if c.get("vapiCallId") == call_id), None)
-    if call:
-        call["status"] = status
-        call["updatedAt"] = datetime.now().isoformat()
+    lead = db.query(CampaignLead).filter(CampaignLead.vapi_call_id == vapi_call_id).first()
+    if lead:
+        # Store full result for analysis and stats
+        lead.result = payload
         
-        # If completed, move to completed_calls_db
-        if status == "ended" or status == "completed":
-            completed_call = {**call, **payload}
-            completed_calls_db.append(completed_call)
-            calls_db.remove(call)
+        # Map Vapi status to our internal status
+        if status in ["ended", "completed"]:
+            lead.status = "completed"
+        elif status in ["failed", "error"]:
+            lead.status = "failed"
+        else:
+            lead.status = status
+            
+        db.commit()
+        return {"success": True, "message": f"Updated lead {vapi_call_id} to {status}"}
+    
+    return {"success": False, "message": "Lead not found for this call ID"}
     
     return {
         "success": True,
         "message": "Webhook received",
         "callId": call_id,
         "status": status
+    }
+
+
+# --- BILLING ROUTES ---
+
+def get_or_create_wallet(db: Session, user_id: int):
+    wallet = db.query(Wallet).filter(Wallet.user_id == user_id).first()
+    if not wallet:
+        wallet = Wallet(user_id=user_id, balance=0.0)
+        db.add(wallet)
+        db.commit()
+        db.refresh(wallet)
+    return wallet
+
+@app.get("/api/v1/billing/balance")
+async def get_balance(user: dict = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    wallet = get_or_create_wallet(db, user["id"])
+    return {
+        "success": True,
+        "balance": wallet.balance,
+        "currency": wallet.currency
+    }
+
+@app.get("/api/v1/billing/transactions")
+async def get_transactions(user: dict = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    transactions = db.query(Transaction).filter(Transaction.user_id == user["id"]).order_by(Transaction.created_at.desc()).all()
+    return {
+        "success": True,
+        "transactions": [
+            {
+                "id": t.id,
+                "amount": t.amount,
+                "type": t.type,
+                "description": t.description,
+                "status": t.status,
+                "created_at": t.created_at
+            } for t in transactions
+        ]
+    }
+
+@app.post("/api/v1/billing/topup")
+async def top_up(req: TopUpRequest, user: dict = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than zero")
+    
+    wallet = get_or_create_wallet(db, user["id"])
+    
+    # Update balance
+    wallet.balance += req.amount
+    
+    # Create transaction
+    transaction = Transaction(
+        user_id=user["id"],
+        amount=req.amount,
+        type="topup",
+        description="Wallet Top Up (Simulated)",
+        status="completed"
+    )
+    
+    db.add(transaction)
+    db.commit()
+    
+    return {
+        "success": True,
+        "new_balance": wallet.balance,
+        "message": f"Successfully topped up ${req.amount}"
     }
 
 @app.post("/api/v1/webhooks/custom")
@@ -996,16 +1418,64 @@ async def custom_webhook(payload: dict, api_key: Optional[str] = Depends(optiona
 async def get_statistics(db: Session = Depends(get_db)):
     """Get system statistics"""
     total_customers = cs.count_customers(db)
+    total_campaigns = db.query(Campaign).count()
+    total_leads = db.query(CampaignLead).count()
+    leads = db.query(CampaignLead).all()
+    
+    # Advanced outcome parsing
+    reached_human = 0
+    voicemails = 0
+    unsuccessful = 0
+    completed_leads = 0
+    scheduled_leads = 0
+    
+    for lead in leads:
+        if lead.status == "scheduled":
+            scheduled_leads += 1
+            continue
+            
+        if lead.status == "completed":
+            completed_leads += 1
+            
+        if lead.result:
+            # Check endedReason from Vapi (handle both direct and nested formats)
+            reason = lead.result.get("endedReason")
+            if not reason:
+                reason = lead.result.get("call", {}).get("endedReason")
+            
+            if reason in ["customer-ended-call", "assistant-ended-call"]:
+                reached_human += 1
+            elif reason == "voicemail":
+                voicemails += 1
+            elif reason in ["phone-call-error", "customer-busy", "customer-did-not-answer", "no-answer", "error"]:
+                unsuccessful += 1
+            elif lead.status == "completed":
+                # Fallback if reason is unknown but status is completed
+                reached_human += 1
+    
+    # Calculate answer rate safely
+    answer_rate = "0%"
+    if total_leads > 0:
+        rate = (reached_human / total_leads) * 100
+        answer_rate = f"{int(rate)}%"
+
     return {
         "success": True,
         "statistics": {
             "totalCustomers": total_customers,
-            "scheduledCalls": len([c for c in calls_db if c.get("status") == "scheduled"]),
-            "completedCalls": len(completed_calls_db),
-            "fullyVerified": len([c for c in completed_calls_db if c.get("callOutcome") == "fully_verified"]),
-            "partiallyVerified": len([c for c in completed_calls_db if c.get("callOutcome") == "partially_verified"]),
-            "notVerified": len([c for c in completed_calls_db if c.get("callOutcome") == "not_verified"]),
-            "noAnswer": len([c for c in completed_calls_db if c.get("callOutcome") == "no_answer"])
+            "totalCampaigns": total_campaigns,
+            "totalLeads": total_leads,
+            "completedLeads": completed_leads,
+            "reachedHuman": reached_human,
+            "reachedVoicemail": voicemails,
+            "unsuccessful": unsuccessful,
+            "answerRate": answer_rate,
+            "scheduledCalls": scheduled_leads,
+            "completedCalls": completed_leads,
+            "fullyVerified": reached_human, # Placeholder
+            "partiallyVerified": 0,
+            "notVerified": unsuccessful,
+            "noAnswer": unsuccessful
         },
         "timestamp": datetime.now().isoformat()
     }
@@ -1140,18 +1610,19 @@ if __name__ == "__main__":
     protocol = "https" if use_https and ssl_certfile else "http"
     
     print(f"\n{'='*60}")
-    print(f"🚀 Starting CRM Verification System API")
+    print(f"[START] Starting CRM Verification System API")
     print(f"{'='*60}")
-    print(f"📡 Server: {protocol}://0.0.0.0:{port}")
-    print(f"📚 API Docs: {protocol}://localhost:{port}/docs")
-    print(f"📖 ReDoc: {protocol}://localhost:{port}/redoc")
+    print(f"[START] Server: {protocol}://0.0.0.0:{port}")
+    print(f"[START] API Docs: {protocol}://localhost:{port}/docs")
+    print(f"[START] ReDoc: {protocol}://localhost:{port}/redoc")
     print(f"{'='*60}\n")
     
     uvicorn.run(
-        app,
+        "main:app",
         host="0.0.0.0",
         port=port,
         ssl_keyfile=ssl_keyfile,
-        ssl_certfile=ssl_certfile
+        ssl_certfile=ssl_certfile,
+        reload=True
     )
 
