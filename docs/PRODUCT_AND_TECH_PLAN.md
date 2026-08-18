@@ -65,182 +65,87 @@ This document analyzes the current demo, defines target architecture, and specif
 - **Inbound:** Demo is outbound-only; inbound flows (e.g. number → agent) to be designed.
 - **Webhooks:** Vapi webhook received but not fully driving call state (e.g. completed → stored results).
 - **Frontend:** Single SPA, one large component; no Next.js, no shared design system beyond Tailwind.
-- **Config:** API keys and provider config in env/localStorage; no per-tenant or per-integration store.
+- **Config:** API keys and provider config in env/localStorage; no per-tenant or per-in## 3. Backend Choice: Python (FastAPI) + SQLAlchemy
+
+The platform uses a **Python (FastAPI) + SQLAlchemy + SQLite/PostgreSQL** architecture:
+
+1. **High Performance & Developer Velocity**  
+   FastAPI is built on ASGI (Starlette / Uvicorn), providing extremely fast asynchronous request handling, perfect for call webhooks and real-time events.
+
+2. **Database Integration**  
+   SQLAlchemy provides a powerful Object Relational Mapper (ORM) mapped to SQLite for local development (`crm_outcalling.db`) and PostgreSQL for production, managed with Alembic or schema synchronization.
+
+3. **Twilio Telephony & Call Control**  
+   Python has native, well-supported SDKs for Twilio Voice and Vapi. FastAPI routes handle warm call transfers, supervisor session controls (whisper, listen, barge, takeover), and spam reputation tracking.
+
+4. **Background Task Execution**  
+   FastAPI's built-in background tasks (or Celery/Redis for scaling) handle asynchronous actions like batch customer imports, webhook dispatches, and retries.
 
 ---
 
-## 3. Backend Choice: NestJS + Prisma vs Python (FastAPI)
+## 4. Frontend Stack
 
-**Clarification:** Prisma is an ORM, not a backend framework. The choice is:
-
-- **Option A:** **NestJS (Node/TypeScript) + Prisma** – backend framework + ORM.
-- **Option B:** **Python (FastAPI) + SQLAlchemy or Tortoise** – keep current stack, add ORM + DB.
-
-### 3.1 Recommendation: **NestJS + Prisma**
-
-Reasons for an **AI Voice Calling** product:
-
-1. **Single language (TypeScript)**  
-   Next.js (frontend) + NestJS (backend) share types and contracts; easier to keep call/agent/contact DTOs in sync.
-
-2. **Modular structure for many voice providers**  
-   One module per provider: `VapiModule`, later `BlandModule`, `RetellModule`, `TwilioModule`. Each owns config, API client, and webhook handling. Fits “Vapi now, Bland and others later.”
-
-3. **Voice-first abstraction**  
-   `VoiceProvider` interface (e.g. `scheduleOutbound`, `getCallStatus`, `handleInbound`, optional `testConnection`). `VoiceService` selects provider by config and delegates. Call and contact modules stay provider-agnostic.
-
-4. **Real-time and queues**  
-   NestJS ecosystem (WebSockets, Bull/BullMQ) aligns with call events, webhooks, and scheduled jobs.
-
-5. **Prisma**  
-   Type-safe schema and migrations for calls, contacts, agents, numbers, and later tenants and API keys.
-
-6. **Ecosystem and hiring**  
-   One TypeScript codebase; voice/integration work is mostly HTTP and events, not ML-in-process – Node is a good fit.
-
-**When to choose FastAPI:**  
-Keep or migrate to FastAPI if the team is Python-first or if you need heavy ML/audio pipelines in the same process.
-
-**Conclusion:**  
-For a scalable **AI Voice Calling** platform with multiple voice providers and a Next.js frontend, **NestJS + Prisma (TypeScript)** is recommended. Database: **PostgreSQL** (production); SQLite optional for local dev.
+- **Framework:** React SPA bootstrapped with Vite.
+- **Routing:** React Router v6.
+- **Styling:** Tailwind CSS + Vanilla CSS custom components.
+- **Icons:** Lucide React.
+- **State Management:** React Context (Auth, Theme) + Local state hooks.
 
 ---
 
-## 4. Frontend Stack (decided)
+## 5. Authentication & Scoping (SaaS)
 
-- **Framework:** Next.js (App Router).
-- **Language:** TypeScript.
-- **UI:** Shadcn/ui + Tailwind CSS.
-- **State:** React state + server state (e.g. TanStack Query) as needed.
+User-facing authentication, session management, and programmatic API keys are scoped by **Tenant** (Organization) to ensure data isolation.
 
----
-
-## 5. Authentication (SaaS)
-
-User-facing auth (registration, login, session) is required for a solid SaaS. API keys remain for programmatic access (n8n, Zapier) and are scoped to the authenticated user or their organization.
-
-### 5.1 Auth scope
+### 5.1 Auth Scope
 
 | Concern | Purpose |
-|--------|---------|
-| **User registration** | Sign up with email + password; create user and default org/workspace. |
-| **Login** | Sign in with email + password; issue session (access + refresh tokens). |
-| **Session management** | Access token (short-lived) + refresh token (long-lived, stored securely); logout and refresh flows. |
-| **Password reset** | Forgot password: request reset link; reset: set new password with time-limited token. |
-| **Email verification** (recommended) | Optional: verify email after signup; optional “verified” gate before sensitive actions. |
-| **API keys** | Created by logged-in user (or org admin); used for REST API and webhooks (Bearer). |
-| **Multi-tenant** | User belongs to one or more organizations; all data (contacts, calls, config) scoped by org. |
+|---|---|
+| **User Registration** | Sign up with email + password; create user under default tenant. |
+| **Login** | Verify credentials; issue access token (JWT) and refresh token (opaque string). |
+| **Session Management** | Short-lived access token (JWT) verified in memory. Long-lived refresh token stored in database with rotation. |
+| **Password Reset** | Request reset link (forgot-password) producing time-limited token; set new password. |
+| **API Keys** | Database-backed API keys (`api_keys` table) scoped to user's tenant for third-party scripts/automation. |
+| **Multi-Tenancy** | Every key object (Campaigns, Customers, Twilio Numbers) belongs to a `tenant_id` and queries filter by the requester's `tenant_id`. |
 
-### 5.2 Backend auth (NestJS)
+### 5.2 Backend Auth Implementation (FastAPI)
 
-**Auth module responsibilities**
+- **Register/Login** (`/auth/register`, `/auth/login`): Hash password using bcrypt. Generate access token (JWT, short lifespan) and refresh token (cryptographically secure opaque string). Store refresh token hash and expiry in the database.
+- **Token Refresh** (`/auth/refresh`): Validate incoming refresh token against database. Issue new access token and rotated refresh token (revoking the old one).
+- **Password Reset** (`/auth/forgot-password`, `/auth/reset-password`): Generate single-use tokens stored in `password_reset_tokens`. In production, trigger reset emails; in local testing, output the reset link to console logs.
+- **API Keys** (`/api/v1/api-keys/*`): Programmatic access via `Authorization: Bearer <key>`. Validate key hash against database `ApiKey` table to identify user and scope.
 
-- **Register** – `POST /auth/register`: email, password, optional name. Validate; hash password (bcrypt or argon2); create `User` and default `Organization`; optionally send verification email; return tokens or require email verification first.
-- **Login** – `POST /auth/login`: email, password. Verify credentials; issue access token (JWT, short-lived, e.g. 15 min) and refresh token (opaque or JWT, e.g. 7 days); store refresh token in DB (RefreshToken or Session table) linked to user.
-- **Refresh** – `POST /auth/refresh`: body or cookie with refresh token. Validate; rotate refresh token (optional); issue new access token (and optionally new refresh token).
-- **Logout** – `POST /auth/logout`: invalidate refresh token (and optionally current access token in a blocklist if needed).
-- **Forgot password** – `POST /auth/forgot-password`: email. If user exists, create time-limited reset token (e.g. 1h), store hash in DB, send email with link (e.g. `https://app.example.com/reset-password?token=...`).
-- **Reset password** – `POST /auth/reset-password`: token, newPassword. Validate token; update password; invalidate token.
-- **Email verification** (optional) – `POST /auth/verify-email`: token. Mark user as verified. Send verification email from register or a resend endpoint.
-- **Me** – `GET /auth/me`: return current user (and org membership) from access token. Used by frontend to restore session and show user/org in UI.
+### 5.3 Database Entities for Auth (SQLAlchemy)
 
-**Token strategy**
-
-- **Access token:** JWT, signed (e.g. HS256 or RS256), payload: `sub` (userId), `email`, `orgId` (or `orgIds`), `exp`, `iat`. Short expiry (e.g. 15 min) to limit exposure. Sent in `Authorization: Bearer <token>` or in httpOnly cookie (if same-site web only).
-- **Refresh token:** Opaque token stored in DB (RefreshToken table: id, userId, tokenHash, expiresAt, revoked). Or signed JWT with long expiry and jti stored for revocation. Sent in httpOnly cookie (recommended for web) or body. Used only to obtain new access tokens; never used for API calls.
-- **Password reset token:** Opaque or JWT, single-use, short expiry (e.g. 1h), stored hashed in DB until consumed.
-
-**Guards and scoping**
-
-- **JwtAuthGuard** – validates access token on protected routes; attaches user (and org) to request. All dashboard and API routes that need “current user” use this.
-- **OptionalJwtAuthGuard** – for routes that work with or without login (e.g. some webhooks). If valid token present, attach user; else continue without user.
-- **API key auth** – for `Authorization: Bearer <api_key>`. Validate key hash against ApiKey table; resolve user/org from key; attach to request. Used by n8n, Zapier, external scripts. Prefer scoping API keys to org so data isolation is clear.
-
-**Security**
-
-- Passwords: hash with bcrypt (cost 10+) or argon2id; never log or return passwords.
-- Rate limiting: on register, login, forgot-password (e.g. per IP or per email) to prevent abuse.
-- Refresh token rotation: issue new refresh token on each refresh; revoke previous one to detect reuse (optional but recommended).
-- CORS and cookies: if using cookie-based refresh, set `SameSite=Strict` or `Lax`, `Secure` in production, correct domain/path.
-- Config: JWT secret, token expiry, refresh expiry, email provider (e.g. Resend, SendGrid) in env; no hardcoding.
-
-### 5.3 Frontend auth (Next.js)
-
-**Routes and middleware**
-
-- **Public routes:** `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email` (if used). No session required.
-- **Protected routes:** everything under `(dashboard)/` and `/settings` etc. Require valid session; redirect to `/login` if not authenticated.
-- **Middleware:** Next.js middleware runs on each request. Read session (e.g. from httpOnly cookie or validate JWT in cookie). If protected path and no valid session, redirect to `/login?redirect=<current>`.
-
-**Session on the client**
-
-- **Option A (recommended for web):** Access token in memory or short-lived cookie; refresh token in httpOnly cookie. On load, call `GET /auth/me` with credentials; if 401, try refresh; if refresh fails, redirect to login. No token in localStorage to reduce XSS impact.
-- **Option B:** Access + refresh in httpOnly cookies only; backend sets cookies on login/refresh; frontend just sends credentials on fetch. Same security; session “just works” for same-origin API.
-- **React Native (later):** Use secure storage for refresh token; access token in memory; same refresh flow.
-
-**Pages and flows**
-
-- **Register:** Form (email, password, confirm password, optional name). Submit to `POST /auth/register`. On success: either auto-login (set cookies / return tokens) and redirect to dashboard, or redirect to “Check your email to verify” and then login after verification.
-- **Login:** Form (email, password). Submit to `POST /auth/login`. On success: store session (cookies or tokens per strategy); redirect to `redirect` query or dashboard.
-- **Logout:** Call `POST /auth/logout`; clear session; redirect to `/login`.
-- **Forgot password:** Form (email). Submit to `POST /auth/forgot-password`; show “If an account exists, we sent a reset link.”
-- **Reset password:** Page with `token` in query. Form (new password, confirm). Submit to `POST /auth/reset-password` with token; on success redirect to login.
-- **Protected layout:** In dashboard layout, ensure session is present (middleware + optional `GET /auth/me` in layout). Show user menu (email, logout); pass user/org to children if needed.
-
-**Libraries (optional)**
-
-- NextAuth.js can handle OAuth and session; for email/password + JWT + custom backend, a thin custom layer (fetch to NestJS auth endpoints + cookie/session handling) is often enough and keeps control. If you add “Sign in with Google” later, NextAuth or similar can sit alongside or replace the custom login page for OAuth only.
-
-### 5.4 Prisma entities for auth
-
-- **User** – id, email (unique), passwordHash, name?, emailVerifiedAt?, createdAt, updatedAt.
-- **Organization** (tenant) – id, name, slug?, createdAt. One org per user at signup; later invite/add to more orgs.
-- **OrganizationMember** – userId, organizationId, role (owner | admin | member). User can belong to multiple orgs.
-- **RefreshToken** – id, userId, tokenHash, expiresAt, revokedAt?, createdAt. Or **Session** with same idea.
-- **PasswordResetToken** – id, userId, tokenHash, expiresAt, usedAt?, createdAt.
-- **ApiKey** – id, organizationId (or userId), keyHash, keyPrefix (e.g. first 8 chars for display), name?, scopes?, lastUsedAt?, createdAt. All API key operations (create, list, revoke) require JWT auth and scope to current user’s org.
-
-Contact, Call, IntegrationConfig, etc. get **organizationId** (and optionally userId for audit). All queries filter by `organizationId` from the current user’s context.
-
-### 5.5 Auth implementation order
-
-1. **Prisma:** Add User, Organization, OrganizationMember, RefreshToken, PasswordResetToken (and ApiKey if not already). Run migrations.
-2. **NestJS Auth module:** Register, login (issue access + refresh), refresh, logout; JwtAuthGuard and JWT strategy; optional forgot-password and reset-password (with token table and email sending stub or real provider).
-3. **Next.js:** Login and register pages; middleware to protect dashboard; session handling (cookie or token); logout and redirect.
-4. **API keys:** Move API key creation/list/revoke behind JWT auth; scope to org; store in DB. Public API continues to accept API key in Bearer header.
-5. **Email (optional):** Wire Resend/SendGrid (or similar) for verification and password-reset emails; env-based config.
-6. **OAuth (later):** Add “Sign in with Google” (or GitHub) if desired; same session model, additional provider in Auth module.
+- **User:** `id`, `email`, `password_hash`, `full_name`, `role`, `tenant_id`, `is_active`, `created_at`.
+- **Tenant:** `id`, `name`, `domain`, `white_label_config`, `created_at`.
+- **RefreshToken:** `id`, `user_id`, `token_hash`, `created_at`, `expires_at`, `revoked_at`.
+- **PasswordResetToken:** `id`, `user_id`, `token_hash`, `created_at`, `expires_at`, `used_at`.
+- **ApiKey:** `id`, `user_id`, `name`, `key_hash`, `key_prefix`, `created_at`, `expires_at`, `last_used_at`, `is_active`, `tenant_id`.
 
 ---
 
 ## 6. Repository Structure
 
-### 6.1 Monorepo (recommended)
-
 ```
-voice-calling-platform/
-├── apps/
-│   ├── web/                     # Next.js (Shadcn, Tailwind, TS)
-│   │   ├── app/
-│   │   ├── components/
-│   │   ├── lib/
-│   │   └── package.json
-│   └── api/                     # NestJS backend
-│       ├── src/
-│       │   ├── modules/
-│       │   ├── prisma/
-│       │   └── main.ts
-│       ├── prisma/
-│       └── package.json
-├── packages/
-│   └── types/                   # Shared DTOs: Call, Contact, Agent, ScheduleRequest, etc.
-│       └── package.json
-├── package.json
-├── pnpm-workspace.yaml
-└── docs/
+calling-software/
+├── backend/                  # FastAPI Backend
+│   ├── routers/              # Sub-routers (auth, twilio, telephony, chatwoot, spam)
+│   ├── auth.py               # Cryptography, JWT verification, API key guards
+│   ├── database.py           # SQLite connection & engine
+│   ├── models.py             # SQLAlchemy schemas
+│   ├── main.py               # Main entrypoint & lifespan
+│   └── requirements.txt      # Python dependencies
+├── src/                      # React Frontend (Vite)
+│   ├── components/           # UI and layout components
+│   ├── context/              # Context (AuthContext, ThemeContext)
+│   ├── pages/                # Views (Dashboard, Settings, Campaigns, ManualDialer)
+│   └── App.jsx               # React Router configurations
+├── package.json              # Vite scripts & node dependencies
+└── docs/                     # Product plans and markdown docs
 ```
 
-- **apps/web:** Dashboard, calls (schedule, results, history), voice agent / provider config, phone numbers, contact sources (import from CRM, Excel), settings, API docs.
+--- contact sources (import from CRM, Excel), settings, API docs.
 - **apps/api:** REST API + webhooks; voice provider abstraction; contact and call lifecycle.
 - **packages/types:** Shared types for calls, contacts, agents, and provider-specific payloads.
 
@@ -284,170 +189,59 @@ apps/api/
 │   │   │   │   └── (retell, twilio, …)
 │   │   │   └── dto/
 │   │   ├── webhook/
-│   │   │   ├── webhook.module.ts
-│   │   │   ├── webhook.controller.ts      # POST /webhooks/vapi, /webhooks/bland, …
-│   │   │   └── webhook.service.ts         # Route to provider handlers
-│   │   ├── contact-source/     # Where contacts come from (CRM, file, API)
-│   │   │   ├── contact-source.module.ts
-│   │   │   ├── adapters/
-│   │   │   │   ├── rest-api.adapter.ts     # Generic REST “CRM”
-│   │   │   │   ├── excel.adapter.ts
-│   │   │   │   └── (salesforce, hubspot later)
-│   │   │   └── ...
-│   │   └── auth/
-│   │       ├── auth.module.ts
-│   │       ├── auth.controller.ts       # register, login, refresh, logout, forgot-password, reset-password, me
-│   │       ├── auth.service.ts
-│   │       ├── strategies/               # jwt.strategy.ts, api-key.strategy.ts (optional)
-│   │       ├── guards/                   # jwt-auth.guard.ts, api-key.guard.ts
-│   │       └── dto/
-│   └── prisma/
-│       └── prisma.service.ts
-├── test/
-└── package.json
-```
+---
 
-### 7.2 Voice provider abstraction (future-proof)
+### 7.1 Backend Structure & Routing (FastAPI)
 
-- **VoiceProvider interface** (per provider, e.g. Vapi, Bland, Retell):
-  - `scheduleOutbound(contact, agentConfig, scheduleOptions)` → external call id
-  - `getCallStatus(callId)` → status, duration, outcome
-  - `testConnection(credentials)` → boolean / health
-  - Optional: `registerInbound(numberId, agentId)` for inbound routing
-- **VoiceService** holds provider registry; selects implementation by config (e.g. `provider: 'vapi' | 'bland'`) and delegates. Call and contact modules do not depend on a specific provider.
-- **Webhooks:** `WebhookController` receives provider webhooks; dispatches by path or payload to `VapiWebhookHandler`, `BlandWebhookHandler`, etc. Handlers update `Call` and related result data.
+- **Authentication router (`backend/routers/auth_router.py`):** Register, login, refresh tokens, logout, forgot-password, reset-password, get current user (`/me`).
+- **Twilio integration router (`backend/routers/twilio_router.py`):** Twilio access tokens for client softphone, phone number search, purchase, list, assignment.
+- **Telephony router (`backend/routers/telephony_router.py`):** Blind transfers, warm transfers, supervisor sessions (listen, whisper, barge, takeover), agent queues.
+- **Spam protection router (`backend/routers/spam_protection_router.py`):** Spam reputation dashboards, rotation, spare line management.
+- **Chatwoot router (`backend/routers/chatwoot_router.py`):** Chatwoot webhook integrations and message synchronization.
 
-### 7.3 Contact sources (not the product core)
+### 7.2 Multi-Tenant Scoping (SQLAlchemy)
 
-- **ContactSource** or **ContactSourceAdapter**: “Fetch contacts from X.”
-- Generic REST adapter: configurable URL + API key, test + fetch (current “CRM” behavior).
-- Excel adapter: upload + column mapping, persist as contacts.
-- Later: Salesforce, HubSpot, etc. as optional adapters. Platform remains **voice-calling first**; these are inputs for who to call.
-
-### 7.4 Persistence (Prisma) – Call-Centric and Auth
-
-Core entities (conceptual):
-
-- **User** – id, email (unique), passwordHash, name?, emailVerifiedAt?, createdAt, updatedAt.
-- **Organization** – id, name, slug?, createdAt. Tenant for data isolation.
-- **OrganizationMember** – userId, organizationId, role (owner | admin | member).
-- **RefreshToken** (or Session) – id, userId, tokenHash, expiresAt, revokedAt?, createdAt.
-- **PasswordResetToken** – id, userId, tokenHash, expiresAt, usedAt?, createdAt.
-- **Contact** – id, organizationId (FK), externalId, firstName, lastName, phone, email, … metadata, source (crm | excel | api), createdAt, updatedAt.
-- **Call** – id, organizationId (FK), contactId (FK), voiceProvider (vapi | bland | …), externalCallId, direction (inbound | outbound), status, scheduledAt, startedAt, endedAt, outcome, metadata, createdAt.
-- **CallResult** (or embedded JSON on Call) – recordingUrl, transcriptUrl, verifiedFields, confidence, etc.
-- **IntegrationConfig** (later) – organizationId, type (voice | contact_source), provider (vapi | bland | rest_crm | …), encrypted credentials, webhookSecret.
-- **ApiKey** – organizationId (FK), keyHash, keyPrefix, name?, scopes?, lastUsedAt?, createdAt. Created by authenticated user; used for REST API and webhooks (Bearer).
-
-All contact/call/config data scoped by organizationId; auth entities (User, RefreshToken, etc.) support login and multi-tenant isolation.
+All operations on database entities (except globally system-defined tables) are scoped by `tenant_id`:
+- **Campaigns, Customers, Twilio Phone Numbers, Queues:** Automatically query with a `.filter(Model.tenant_id == current_user.tenant_id)` clause.
+- **Database inserts:** Assign the `tenant_id` of the authenticated user to the model's `tenant_id` attribute.
 
 ---
 
-## 8. Frontend Structure (Next.js) – Voice-Calling UX
+## 8. Frontend Structure (Vite React SPA)
 
-### 8.1 App Router layout
-
-```
-apps/web/
-├── app/
-│   ├── layout.tsx
-│   ├── page.tsx                 # Dashboard: call stats, recent calls, quick actions
-│   ├── (dashboard)/
-│   │   ├── layout.tsx           # Sidebar + header
-│   │   ├── calls/               # List, schedule, results, history
-│   │   │   ├── page.tsx
-│   │   │   ├── schedule/
-│   │   │   ├── results/
-│   │   │   └── history/
-│   │   ├── contacts/            # Contact list, import (CRM, Excel)
-│   │   │   ├── page.tsx
-│   │   │   └── import/
-│   │   ├── agents/              # Voice agent / assistant config (per provider later)
-│   │   ├── numbers/             # Phone numbers (when multi-number supported)
-│   │   ├── settings/            # API keys, provider config (Vapi, etc.), webhooks
-│   │   └── api-docs/
-│   ├── (auth)/                  # Auth flows (public)
-│   │   ├── login/
-│   │   ├── register/
-│   │   ├── forgot-password/
-│   │   └── reset-password/
-│   └── api/
-├── components/
-│   ├── ui/
-│   ├── layout/
-│   ├── calls/
-│   ├── contacts/
-│   ├── agents/
-│   ├── settings/
-│   └── shared/
-├── lib/
-├── hooks/
-├── types/
-└── styles/
-```
-
-- **Calls** are the primary object: schedule outbound, view results, history. Contacts exist to support “who to call.”
-- **Contacts:** List, import from CRM, import from Excel (current demo flows).
-- **Agents / Numbers:** Voice agent and phone number configuration (today: Vapi assistant ID + phone number ID in settings; later can be first-class pages).
-- **Settings:** API keys, voice provider credentials (Vapi now; Bland, etc. later), webhook URL. Design tokens in `global.css` per SKILL.
-- **Auth:** Login, register, forgot-password, reset-password under `(auth)/`; middleware protects `(dashboard)/` and redirects unauthenticated users to login.
+- **Auth Context (`src/context/AuthContext.jsx`):** Exposes `user`, `token` (JWT access token), `isAuthenticated`, login, register, logout, and automatic access token refresh handling using the refresh token.
+- **Settings View (`src/pages/SettingsView.jsx`):** Custom dashboard with sections for AI core config, system webhooks, and API key management (enabling users to generate, view, and revoke database-backed programmatic API keys).
 
 ---
 
-## 9. Integrations Roadmap (Voice-First)
+## 9. Integrations Roadmap (SaaS Stack)
 
-| Priority | Integration | Purpose | Backend touch |
-|----------|-------------|---------|----------------|
-| Current | **Vapi** | Outbound voice, scheduling, status, webhooks | Keep; move into `VoiceModule` + `VapiProvider` |
-| Current | **Webhooks** (Vapi + custom) | Call lifecycle, automation | Central `WebhookController` + provider handlers |
-| Current | **Contact source: REST** | Fetch contacts (e.g. “CRM”) | `ContactSourceModule` + generic REST adapter |
-| Current | **Contact source: Excel** | Upload contacts | Same module, Excel adapter |
-| Next | **Persistence** | PostgreSQL via Prisma | Replace in-memory with Prisma |
-| Next | **Auth (SaaS)** | User registration, login, session (JWT + refresh), password reset, email verification (optional) | Auth module: User, Org, RefreshToken, PasswordResetToken; JWT + API key guards |
-| Next | **API keys** | Create/list/revoke scoped to org; Bearer for REST API | ApiKey model, scoped to organizationId |
-| Later | **Bland / Retell / Twilio** | Additional voice providers | New `VoiceProvider` implementations; same Call/Contact model |
-| Later | **Inbound** | Receive calls, route to agent | Provider-specific inbound config + webhook handling |
-| Later | **Salesforce / HubSpot** | Optional contact sources | New contact-source adapters |
-| Later | **Multi-tenant** | Orgs, workspaces, per-tenant config | TenantId in schema, config service |
+1. **Database-backed Sessions:** Opaque refresh token rotation in database table to enable secure session state.
+2. **Persistent API Keys:** API keys stored as SHA-256 hashes in `api_keys` table. Programmatic endpoints validate these against the owner user and apply tenant filters.
+3. **Password Resets:** Automated secure single-use forgot/reset tokens.
+4. **Softphone & Supervisor Control:** Rich real-time call control (bridges, listen/whisper/barge, transfers).
+5. **Spam Reputation & Health Checks:** Real-time spam complaints monitoring, dynamic replacement (spare line rotations).
 
 ---
 
-## 10. Implementation Order (high level)
+## 10. Implementation Order
 
-1. **Repo and workspace**  
-   Monorepo: `apps/api` (NestJS), `apps/web` (Next.js + Shadcn + Tailwind + TS), `packages/types`.
-
-2. **Backend core and auth schema**  
-   Prisma schema: User, Organization, OrganizationMember, RefreshToken, PasswordResetToken, Contact, Call, ApiKey. Run migrations.
-
-3. **Auth module (NestJS)**  
-   Register, login (access + refresh tokens), refresh, logout, forgot-password, reset-password, me. JWT strategy and guard; password hashing (bcrypt/argon2). Optional: email verification and transactional email (env-configured).
-
-4. **Protected API and API keys**  
-   Apply JwtAuthGuard to dashboard API routes; scope Contact, Call, and config by organizationId. API key auth for programmatic access; create/list/revoke API keys behind JWT, scoped to org.
-
-5. **Frontend auth**  
-   Next.js: login, register, forgot-password, reset-password pages; middleware to protect `(dashboard)/`; session handling (e.g. httpOnly cookie for refresh, access token in cookie or memory); logout and redirect.
-
-6. **Backend: voice and contacts**  
-   VoiceModule + VapiProvider; Contact and Call modules with org scoping; contact-source adapters (REST, Excel). Webhook handler for Vapi updates Call status/result.
-
-7. **Frontend: dashboard and features**  
-   Dashboard (call-centric), calls (schedule, results, history), contacts (list, import), settings (providers, API keys), API docs. Shadcn + shared types. All behind auth.
-
-8. **Later**  
-   More voice providers (e.g. Bland), inbound, OAuth (e.g. Sign in with Google), React Native (reuse API), queues for scheduling.
+1. **Database Schema updates:** Add SQLAlchemy models for RefreshToken, PasswordResetToken, ApiKey in `backend/models.py`.
+2. **Auth Service updates:** Implement verify and rotation helpers in `backend/auth.py`.
+3. **Auth Router implementation:** Build `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password` endpoints in `backend/routers/auth_router.py`.
+4. **API Key Persistent Endpoints:** Migrate key listing/revoking/generation in `backend/main.py` to use `ApiKey` table.
+5. **Tenant Scoping:** Apply `tenant_id` filters to active campaigns, customer imports, and calls in `backend/main.py`.
+6. **Frontend Integration:** Hook refresh token handling into `AuthContext.jsx`, and create the API key table/actions interface in `SettingsView.jsx`.
 
 ---
 
 ## 11. Summary
 
-- **Product:** **AI Voice Calling platform** (inbound + outbound), like Bland / Vapi / Retell. Voice agents, phone numbers, calls, and results are the core; CRM and Excel are **contact sources** for who to call.
-- **Demo:** Voice provider (Vapi), outbound scheduling, webhooks, call results, contact import (CRM + Excel), API keys, automation-friendly API.
-- **Authentication (SaaS):** **User registration** (email + password), **login** (access JWT + refresh token), **logout**, **password reset** (forgot-password + reset with time-limited token), optional **email verification**. All data scoped by **Organization** (multi-tenant). **API keys** for programmatic access, created by authenticated users and scoped to org. Config in env; no hardcoded secrets.
-- **Backend:** **NestJS + Prisma (TypeScript)** with **Auth module** (register, login, refresh, JWT + API key guards) and **voice-provider abstraction** so Vapi, Bland, and others plug in without rewriting call/contact logic.
-- **Frontend:** **Next.js + Shadcn + Tailwind + TypeScript** with **auth pages** (login, register, forgot-password, reset-password), **middleware-protected dashboard**, and **call-centric** layout (calls, contacts, agents, settings, API docs).
-- **Repo:** **Monorepo** with `apps/web`, `apps/api`, and `packages/types`.
-- **Integrations:** **Voice providers first** (Vapi now; Bland, Retell, Twilio later); **contact sources** second (REST, Excel, optional CRMs). Central webhook handling for all providers.
+- **Product:** AI Voice Calling platform. Core contains outbound campaign managers, manual dialers, incoming line routing, and supervisor controls.
+- **Backend:** Python FastAPI + SQLAlchemy + SQLite, modularized into routers (auth, twilio, telephony, chatwoot, spam). Secure session rotation, database-persisted API keys, and multi-tenant scoping.
+- **Frontend:** Vite React SPA with Tailwind CSS styling, React Router routing, transparent token refreshers, and clean integrated dashboards.
+- **Auth:** User registration (email + password), login (access JWT + refresh token), logout, password reset (forgot-password + reset with time-limited token). All data scoped by Tenant (multi-tenant). API keys for programmatic access, created by authenticated users and scoped to tenant. Config in env; no hardcoded secrets.
+- **Repo:** Monorepo with `backend` (FastAPI) and `src` (React/Vite).
+- **Integrations:** Voice providers first (Twilio, Vapi, etc.); contact sources second (REST, Excel, etc.). Centralized router logic for webhook handling.
 
 This plan aligns with the must-remember SKILL (voice agents, inbound/outbound, SaaS, no mocks, config-driven, clean code) and treats the product as an AI Voice Calling platform with solid SaaS authentication and multi-tenant readiness.

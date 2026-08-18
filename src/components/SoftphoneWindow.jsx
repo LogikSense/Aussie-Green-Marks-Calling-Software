@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Phone, X, Minus, Mic, MicOff, PhoneOff, User, Hash, Clock, MoreHorizontal, Pause } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Phone, X, Minus, Mic, MicOff, PhoneOff, User, Hash, Clock, Pause, Share2, Users, Bot, ShieldCheck } from 'lucide-react';
 import { Device } from '@twilio/voice-sdk';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -8,16 +8,52 @@ export default function SoftphoneWindow({ onClose }) {
   const { user, getAuthHeaders } = useAuth();
   const [minimized, setMinimized] = useState(false);
   const [dialNumber, setDialNumber] = useState('');
-  const [status, setStatus] = useState('Offline'); // Available, Busy, Offline
+  const [status, setStatus] = useState('Available');
   const [callState, setCallState] = useState('idle'); // idle, calling, active, incoming
   const [isMuted, setIsMuted] = useState(false);
   const [isOnHold, setIsOnHold] = useState(false);
   
+  // Number Management
+  const [outboundMode, setOutboundMode] = useState('primary'); // primary, secondary, local_presence
+  const [myNumbers, setMyNumbers] = useState([]);
+  
+  // Transfer Modal & State
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferType, setTransferType] = useState('blind'); // blind, warm
+  const [transferTarget, setTransferTarget] = useState('');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [warmTransferStatus, setWarmTransferStatus] = useState(''); // consulting, bridged, cancelled
+
+  // AI Coaching State
+  const [aiCoaching, setAiCoaching] = useState({
+    sentiment: 'Positive (0.88)',
+    suggestion: 'Customer asked about solar tier pricing. Offer Tier 2 package rebate.',
+    objection: 'None detected'
+  });
+
   const [device, setDevice] = useState(null);
   const [activeConnection, setActiveConnection] = useState(null);
   const [tokenError, setTokenError] = useState('');
 
   const API_BASE = import.meta.env.VITE_API_URL || '';
+
+  // Fetch agent numbers
+  useEffect(() => {
+    const fetchNumbers = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/twilio/my-numbers`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMyNumbers(data.numbers || []);
+        }
+      } catch (err) {
+        console.error('Error fetching my numbers:', err);
+      }
+    };
+    fetchNumbers();
+  }, [API_BASE, getAuthHeaders]);
 
   // Initialize Twilio Device
   useEffect(() => {
@@ -42,7 +78,7 @@ export default function SoftphoneWindow({ onClose }) {
         });
 
         if (!res.ok) {
-          throw new Error('Failed to fetch Twilio token. Ensure backend Twilio environment variables are set.');
+          throw new Error('Failed to fetch Twilio token. Ensure backend Twilio settings are configured.');
         }
 
         const data = await res.json();
@@ -53,27 +89,12 @@ export default function SoftphoneWindow({ onClose }) {
           enableRingingState: true
         });
 
-        newDevice.on('registered', () => {
-          console.log('Twilio Device registered');
-        });
-
-        newDevice.on('error', (twilioError) => {
-          console.error('Twilio Device Error:', twilioError);
-          setTokenError(twilioError.message);
-        });
-
         newDevice.on('incoming', (connection) => {
           setCallState('incoming');
           setActiveConnection(connection);
           setDialNumber(connection.parameters.From || 'Unknown');
           
           connection.on('disconnect', () => {
-            setCallState('idle');
-            setActiveConnection(null);
-            setDialNumber('');
-          });
-          
-          connection.on('cancel', () => {
             setCallState('idle');
             setActiveConnection(null);
             setDialNumber('');
@@ -101,7 +122,7 @@ export default function SoftphoneWindow({ onClose }) {
     if (!dialNumber || !device) return;
     setCallState('calling');
     try {
-      const params = { To: dialNumber };
+      const params = { To: dialNumber, OutboundMode: outboundMode };
       const connection = await device.connect({ params });
       
       connection.on('accept', () => {
@@ -112,12 +133,7 @@ export default function SoftphoneWindow({ onClose }) {
         setCallState('idle');
         setActiveConnection(null);
         setDialNumber('');
-      });
-      
-      connection.on('error', (err) => {
-        console.error('Connection error:', err);
-        setCallState('idle');
-        setActiveConnection(null);
+        setShowTransferModal(false);
       });
 
       setActiveConnection(connection);
@@ -136,6 +152,37 @@ export default function SoftphoneWindow({ onClose }) {
     setIsMuted(false);
     setIsOnHold(false);
     setActiveConnection(null);
+    setShowTransferModal(false);
+  };
+
+  const handleExecuteTransfer = async () => {
+    if (!activeConnection || !transferTarget) return;
+    
+    try {
+      const endpoint = transferType === 'blind' ? '/api/telephony/transfers/blind' : '/api/telephony/transfers/warm';
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({
+          call_sid: activeConnection.parameters?.CallSid || 'simulated_sid',
+          target_phone: transferTarget,
+          notes: transferNotes
+        })
+      });
+      
+      if (res.ok) {
+        if (transferType === 'blind') {
+          handleEndCall();
+        } else {
+          setWarmTransferStatus('consulting');
+        }
+      }
+    } catch (err) {
+      console.error('Transfer execution error:', err);
+    }
   };
 
   const handleAcceptIncoming = () => {
@@ -155,12 +202,12 @@ export default function SoftphoneWindow({ onClose }) {
 
   if (minimized) {
     return (
-      <div className="fixed bottom-6 right-6 z-50 bg-background border border-border shadow-2xl rounded-full px-4 py-2 flex items-center gap-4 cursor-pointer hover:bg-accent transition-colors" onClick={() => setMinimized(false)}>
+      <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white border border-slate-700 shadow-2xl rounded-full px-4 py-2 flex items-center gap-4 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => setMinimized(false)}>
         <div className="flex items-center gap-2">
-          <Phone className="w-4 h-4 text-primary animate-pulse" />
-          <span className="text-sm font-semibold">Softphone ({status})</span>
+          <Phone className="w-4 h-4 text-emerald-400 animate-pulse" />
+          <span className="text-sm font-semibold">Omnichannel Softphone ({status})</span>
         </div>
-        <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1 hover:bg-background rounded-full">
+        <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1 hover:bg-slate-700 rounded-full">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -168,52 +215,67 @@ export default function SoftphoneWindow({ onClose }) {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-[340px] bg-background border border-border shadow-2xl rounded-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
+    <div className="fixed bottom-6 right-6 z-50 w-[380px] bg-slate-950 text-white border border-slate-800 shadow-2xl rounded-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
       {/* Header */}
-      <div className="bg-accent/30 p-3 flex items-center justify-between border-b border-border">
+      <div className="bg-slate-900/80 p-3 flex items-center justify-between border-b border-slate-800 backdrop-blur">
         <div className="flex items-center gap-2">
-          <Phone className="w-4 h-4 text-primary" />
-          <span className="text-sm font-bold">Manual Calling</span>
+          <Phone className="w-4 h-4 text-emerald-400" />
+          <span className="text-sm font-bold tracking-wide">AI Contact Centre Softphone</span>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setMinimized(true)} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground transition-colors">
+          <button onClick={() => setMinimized(true)} className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
             <Minus className="w-4 h-4" />
           </button>
-          <button onClick={onClose} className="p-1.5 hover:bg-destructive/10 hover:text-destructive rounded-lg text-muted-foreground transition-colors">
+          <button onClick={onClose} className="p-1.5 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-slate-400 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex flex-col h-[480px]">
+      <div className="flex-1 flex flex-col h-[520px]">
         {callState === 'idle' ? (
           <div className="flex-1 p-4 flex flex-col">
-            {/* Status Selector */}
-            <div className="mb-4 flex items-center justify-between bg-accent/20 p-2 rounded-xl border border-border">
-              <span className="text-xs font-medium text-muted-foreground ml-2">Status</span>
-              <select 
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="bg-transparent text-sm font-semibold focus:outline-none border-none cursor-pointer"
-              >
-                <option value="Available">🟢 Available</option>
-                <option value="Busy">🔴 Busy</option>
-                <option value="Offline">⚫ Offline</option>
-              </select>
+            {/* Status & Outbound Number Selector */}
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
+                <span className="text-xs font-medium text-slate-400 ml-2">Agent Status</span>
+                <select 
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="bg-transparent text-xs font-semibold focus:outline-none border-none cursor-pointer text-emerald-400"
+                >
+                  <option value="Available" className="bg-slate-900 text-white">🟢 Available</option>
+                  <option value="Busy" className="bg-slate-900 text-white">🔴 Busy</option>
+                  <option value="Offline" className="bg-slate-900 text-white">⚫ Offline</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
+                <span className="text-xs font-medium text-slate-400 ml-2">Caller ID</span>
+                <select 
+                  value={outboundMode}
+                  onChange={(e) => setOutboundMode(e.target.value)}
+                  className="bg-transparent text-xs font-medium text-slate-200 focus:outline-none border-none cursor-pointer"
+                >
+                  <option value="primary" className="bg-slate-900">Primary Number</option>
+                  <option value="secondary" className="bg-slate-900">Secondary Number</option>
+                  <option value="local_presence" className="bg-slate-900">Local Presence (Auto Match)</option>
+                </select>
+              </div>
             </div>
 
             {/* Display / Input */}
-            <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+            <div className="flex-1 flex flex-col items-center justify-center space-y-2">
               <input 
                 type="text" 
                 value={dialNumber}
-                readOnly
+                onChange={(e) => setDialNumber(e.target.value)}
                 placeholder="Enter number..."
-                className="w-full text-center text-3xl font-bold bg-transparent outline-none tracking-wider placeholder:text-muted-foreground/30"
+                className="w-full text-center text-3xl font-bold bg-transparent outline-none tracking-wider placeholder:text-slate-700"
               />
               {tokenError && (
-                <p className="text-xs text-red-500 mt-2 font-medium bg-red-50 p-2 rounded-lg text-center leading-tight">
+                <p className="text-xs text-red-400 font-medium bg-red-950/40 border border-red-800 p-2 rounded-lg text-center leading-tight">
                   {tokenError}
                 </p>
               )}
@@ -225,7 +287,7 @@ export default function SoftphoneWindow({ onClose }) {
                 <button 
                   key={key}
                   onClick={() => setDialNumber(prev => prev + key)}
-                  className="p-3 text-lg font-semibold bg-accent/30 hover:bg-accent rounded-xl transition-colors"
+                  className="p-3 text-lg font-semibold bg-slate-900 hover:bg-slate-800 rounded-xl transition-colors text-slate-200"
                 >
                   {key}
                 </button>
@@ -236,99 +298,157 @@ export default function SoftphoneWindow({ onClose }) {
               <button 
                 onClick={handleDial}
                 disabled={!dialNumber || status === 'Offline'}
-                className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <Phone className="w-5 h-5 fill-current" />
-                Call
+                Dial Out
               </button>
-              {callState === 'calling' && (
-                <button 
-                  onClick={handleEndCall}
-                  className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2"
-                >
-                  <PhoneOff className="w-5 h-5" />
-                  Cancel
-                </button>
-              )}
             </div>
           </div>
         ) : callState === 'incoming' ? (
-          <div className="flex-1 p-6 flex flex-col bg-slate-900 text-white">
-             <div className="text-center space-y-2 mb-8 mt-10">
-              <div className="w-24 h-24 bg-primary/20 rounded-full mx-auto flex items-center justify-center mb-4 animate-pulse">
-                <Phone className="w-10 h-10 text-primary" />
+          <div className="flex-1 p-6 flex flex-col bg-slate-950 text-white justify-between">
+             <div className="text-center space-y-2 mt-6">
+              <div className="w-20 h-20 bg-emerald-500/20 rounded-full mx-auto flex items-center justify-center mb-4 animate-pulse">
+                <Phone className="w-10 h-10 text-emerald-400" />
               </div>
               <h3 className="text-2xl font-bold tracking-widest">{dialNumber}</h3>
-              <p className="text-emerald-400 font-medium">Incoming Call...</p>
+              <p className="text-emerald-400 font-medium text-sm">Incoming Call via PSTN Queue...</p>
             </div>
             
-            <div className="grid grid-cols-2 gap-4 mt-auto">
+            <div className="grid grid-cols-2 gap-4">
               <button 
                 onClick={handleEndCall}
-                className="py-4 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2"
+                className="py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
               >
-                <PhoneOff className="w-6 h-6" />
+                <PhoneOff className="w-5 h-5" />
                 Decline
               </button>
               <button 
                 onClick={handleAcceptIncoming}
-                className="py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 animate-bounce"
+                className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 animate-bounce"
               >
-                <Phone className="w-6 h-6 fill-current" />
+                <Phone className="w-5 h-5 fill-current" />
                 Accept
               </button>
             </div>
           </div>
         ) : (
-          <div className="flex-1 p-6 flex flex-col bg-slate-900 text-white">
-            <div className="text-center space-y-2 mb-8">
-              <div className="w-20 h-20 bg-slate-800 rounded-full mx-auto flex items-center justify-center mb-4">
-                <User className="w-10 h-10 text-slate-400" />
+          <div className="flex-1 p-4 flex flex-col bg-slate-950 text-white overflow-y-auto">
+            {/* Call Header */}
+            <div className="text-center space-y-1 mb-4">
+              <div className="w-14 h-14 bg-slate-900 border border-slate-800 rounded-full mx-auto flex items-center justify-center">
+                <User className="w-7 h-7 text-slate-400" />
               </div>
-              <h3 className="text-2xl font-bold tracking-widest">{dialNumber}</h3>
-              <p className="text-emerald-400 font-medium flex items-center justify-center gap-2">
-                {callState === 'calling' ? (
-                  <span className="animate-pulse">Calling...</span>
-                ) : (
-                  <>
-                    <Clock className="w-4 h-4" />
-                    <span>00:00</span>
-                  </>
-                )}
+              <h3 className="text-xl font-bold tracking-wide">{dialNumber}</h3>
+              <p className="text-emerald-400 text-xs font-medium flex items-center justify-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Connected • 01:24</span>
               </p>
             </div>
 
-            {callState === 'active' && (
-              <div className="grid grid-cols-3 gap-4 mt-auto mb-8 px-4">
+            {/* AI Live Coaching Panel */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-4 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                <span className="font-semibold text-emerald-400 flex items-center gap-1">
+                  <Bot className="w-3.5 h-3.5" /> VAPI Live Coach
+                </span>
+                <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.5 rounded">
+                  {aiCoaching.sentiment}
+                </span>
+              </div>
+              <p className="text-slate-300 leading-snug">
+                <span className="font-semibold text-slate-400">Next Action:</span> {aiCoaching.suggestion}
+              </p>
+            </div>
+
+            {/* Action Bar */}
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              <button 
+                onClick={toggleMute}
+                className={cn("flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs transition-colors", isMuted ? "bg-white text-slate-950 border-white font-bold" : "bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300")}
+              >
+                {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                <span className="mt-1">{isMuted ? 'Unmute' : 'Mute'}</span>
+              </button>
+              
+              <button 
+                onClick={() => setIsOnHold(!isOnHold)}
+                className={cn("flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs transition-colors", isOnHold ? "bg-amber-500 border-amber-400 text-white font-bold" : "bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300")}
+              >
+                <Pause className="w-5 h-5" />
+                <span className="mt-1">{isOnHold ? 'Resume' : 'Hold'}</span>
+              </button>
+
+              <button 
+                onClick={() => setShowTransferModal(true)}
+                className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs transition-colors"
+              >
+                <Share2 className="w-5 h-5 text-indigo-400" />
+                <span className="mt-1">Transfer</span>
+              </button>
+
+              <button 
+                className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs transition-colors"
+              >
+                <Users className="w-5 h-5 text-cyan-400" />
+                <span className="mt-1">3-Way</span>
+              </button>
+            </div>
+
+            {/* Transfer Modal / Form */}
+            {showTransferModal && (
+              <div className="bg-slate-900 border border-indigo-900/60 rounded-xl p-3 mb-4 space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs font-semibold text-indigo-400 border-b border-slate-800 pb-1.5">
+                  <span>Call Handoff / Transfer</span>
+                  <button onClick={() => setShowTransferModal(false)}><X className="w-3.5 h-3.5" /></button>
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setTransferType('blind')}
+                    className={cn("flex-1 py-1 rounded text-xs font-medium", transferType === 'blind' ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400")}
+                  >
+                    Blind (Cold)
+                  </button>
+                  <button 
+                    onClick={() => setTransferType('warm')}
+                    className={cn("flex-1 py-1 rounded text-xs font-medium", transferType === 'warm' ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400")}
+                  >
+                    Warm (Consult)
+                  </button>
+                </div>
+
+                <input 
+                  type="text" 
+                  placeholder="Target Agent / Phone..." 
+                  value={transferTarget}
+                  onChange={(e) => setTransferTarget(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500"
+                />
+
+                <input 
+                  type="text" 
+                  placeholder="Handoff notes for agent..." 
+                  value={transferNotes}
+                  onChange={(e) => setTransferNotes(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500"
+                />
+
                 <button 
-                  onClick={toggleMute}
-                  className={cn("flex flex-col items-center gap-2 p-3 rounded-xl transition-colors", isMuted ? "bg-white text-slate-900" : "bg-slate-800 hover:bg-slate-700")}
+                  onClick={handleExecuteTransfer}
+                  className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded text-xs transition-colors"
                 >
-                  {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-                  <span className="text-xs font-medium">{isMuted ? 'Unmute' : 'Mute'}</span>
-                </button>
-                <button 
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors"
-                >
-                  <Hash className="w-6 h-6" />
-                  <span className="text-xs font-medium">Keypad</span>
-                </button>
-                <button 
-                  onClick={() => setIsOnHold(!isOnHold)}
-                  className={cn("flex flex-col items-center gap-2 p-3 rounded-xl transition-colors", isOnHold ? "bg-amber-500 text-white" : "bg-slate-800 hover:bg-slate-700")}
-                >
-                  <Pause className="w-6 h-6" />
-                  <span className="text-xs font-medium">{isOnHold ? 'Resume' : 'Hold'}</span>
+                  Execute {transferType === 'blind' ? 'Blind Transfer' : 'Warm Consult'}
                 </button>
               </div>
             )}
 
             <button 
               onClick={handleEndCall}
-              className="mt-auto w-full py-4 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2"
+              className="mt-auto w-full py-3.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-950/40 transition-all flex items-center justify-center gap-2"
             >
-              <PhoneOff className="w-6 h-6" />
-              End Call
+              <PhoneOff className="w-5 h-5" />
+              Disconnect Call
             </button>
           </div>
         )}

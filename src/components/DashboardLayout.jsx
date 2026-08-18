@@ -26,8 +26,13 @@ import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
+import { MessageSquare, Radio, ShieldCheck } from 'lucide-react';
+
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'inbox', label: 'Omnichannel Inbox', icon: MessageSquare },
+  { id: 'supervisor', label: 'Live Supervisor', icon: Radio },
+  { id: 'spam-protection', label: 'Spam Reputation', icon: ShieldCheck },
   { id: 'campaigns', label: 'Campaigns', icon: PhoneCall },
   { id: 'manual-calling', label: 'Manual Calling', icon: PhoneCall },
   { id: 'agents', label: 'AI Agents', icon: Mic2 },
@@ -40,6 +45,7 @@ const NAV_ITEMS = [
   { id: 'admin-numbers', label: 'Phone Numbers', icon: Settings },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
+
 
 export default function DashboardLayout({ activeTab, setActiveTab, children }) {
   const { user, logout } = useAuth();

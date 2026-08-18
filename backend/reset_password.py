@@ -17,7 +17,8 @@ password_hash = hash_password(new_password)
 cursor.execute('UPDATE users SET password_hash = ? WHERE email = ?', (password_hash, 'admin@example.com'))
 conn.commit()
 
-print(f"✓ Password reset for admin@example.com")
+print(f"Password reset for admin@example.com")
 print(f"New password: {new_password}")
 
 conn.close()
+

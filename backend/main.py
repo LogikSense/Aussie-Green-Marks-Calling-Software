@@ -24,6 +24,9 @@ import customer_service as cs
 import settings_service as ss
 from routers.auth_router import router as auth_router
 from routers.twilio_router import router as twilio_router
+from routers.telephony_router import router as telephony_router
+from routers.spam_protection_router import router as spam_protection_router
+from routers.chatwoot_router import router as chatwoot_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,7 +74,11 @@ async def log_requests(request, call_next):
     return response
 
 security = HTTPBearer()
-if not os.getenv("API_KEYS"):
+
+def get_api_key_or_none():
+    return API_KEYS[0] if API_KEYS else None
+
+if not API_KEYS:
     print("Default API Key generated (see console on first request). Set API_KEYS in .env for production.")
 
 def optional_api_key(authorization: Optional[str] = Header(None, alias="Authorization")):
@@ -83,6 +90,9 @@ def optional_api_key(authorization: Optional[str] = Header(None, alias="Authoriz
 
 app.include_router(auth_router)
 app.include_router(twilio_router)
+app.include_router(telephony_router)
+app.include_router(spam_protection_router)
+app.include_router(chatwoot_router)
 
 class CustomerData(BaseModel):
     customerId: str

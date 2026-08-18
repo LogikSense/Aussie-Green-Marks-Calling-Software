@@ -31,6 +31,10 @@ const PlaceholderView = ({ title, icon: Icon }) => (
   </div>
 );
 
+import UnifiedInboxView from '../pages/UnifiedInboxView';
+import SupervisorDashboardView from '../pages/SupervisorDashboardView';
+import SpamProtectionView from '../pages/SpamProtectionView';
+
 export default function OutcallingApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
 
@@ -38,6 +42,12 @@ export default function OutcallingApp() {
     switch (activeTab) {
       case 'dashboard':
         return <DashboardView />;
+      case 'inbox':
+        return <UnifiedInboxView />;
+      case 'supervisor':
+        return <SupervisorDashboardView />;
+      case 'spam-protection':
+        return <SpamProtectionView />;
       case 'campaigns':
         return <CampaignsView />;
       case 'manual-calling':
@@ -64,6 +74,7 @@ export default function OutcallingApp() {
         return <DashboardView />;
     }
   };
+
 
   return (
     <DashboardLayout activeTab={activeTab} setActiveTab={setActiveTab}>

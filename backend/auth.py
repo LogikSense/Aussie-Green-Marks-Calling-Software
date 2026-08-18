@@ -1,4 +1,6 @@
 import re
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Union
 
@@ -10,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_ACCESS_EXPIRE_MINUTES
 from database import get_db
-from models import User
+from models import User, RefreshToken, ApiKey
 
 security = HTTPBearer(auto_error=False)
 BCRYPT_MAX_PASSWORD_BYTES = 72
@@ -79,7 +81,7 @@ def verify_jwt_or_api_key(
     credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     db: Session = Depends(get_db),
-) -> Union[User, str]:
+) -> User:
     from config import API_KEYS
     token = None
     if credentials:
@@ -88,6 +90,8 @@ def verify_jwt_or_api_key(
         token = authorization.replace("Bearer ", "").strip()
     if not token:
         raise HTTPException(status_code=401, detail="Authorization required")
+    
+    # 1. Try decoding as JWT access token
     payload = decode_token(token)
     if payload and payload.get("type") == "access":
         user_id = payload.get("sub")
@@ -95,6 +99,54 @@ def verify_jwt_or_api_key(
             user = db.query(User).filter(User.id == int(user_id), User.is_active == True).first()
             if user:
                 return user
+                
+    # 2. Try looking up in persistent database ApiKey table
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    api_key_record = db.query(ApiKey).filter(ApiKey.key_hash == token_hash, ApiKey.is_active == True).first()
+    if api_key_record:
+        if api_key_record.expires_at and api_key_record.expires_at < datetime.utcnow():
+            raise HTTPException(status_code=401, detail="API key has expired")
+        
+        # Optional: update last used timestamp
+        try:
+            api_key_record.last_used_at = datetime.utcnow()
+            db.commit()
+        except Exception:
+            db.rollback() # prevent transactions errors blocking
+            
+        user = db.query(User).filter(User.id == api_key_record.user_id, User.is_active == True).first()
+        if user:
+            return user
+
+    # 3. Fallback for backwards compatibility to legacy env-based API_KEYS
     if token in API_KEYS:
-        return token
+        # Resolve a fallback active user (admin or any)
+        user = db.query(User).filter(User.email == "admin@example.com").first() or db.query(User).first()
+        if user:
+            return user
+            
     raise HTTPException(status_code=401, detail="Invalid or expired credentials")
+
+
+def generate_secure_opaque_token() -> str:
+    return secrets.token_hex(32)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def create_db_refresh_token(db: Session, user_id: int, expires_days: int = 7) -> str:
+    raw_token = generate_secure_opaque_token()
+    token_hash = hash_token(raw_token)
+    expires_at = datetime.utcnow() + timedelta(days=expires_days)
+    
+    db_token = RefreshToken(
+        user_id=user_id,
+        token_hash=token_hash,
+        expires_at=expires_at
+    )
+    db.add(db_token)
+    db.commit()
+    db.refresh(db_token)
+    return raw_token
