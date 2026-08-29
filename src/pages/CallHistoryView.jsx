@@ -15,11 +15,13 @@ export default function CallHistoryView() {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
 
-  const syncCall = async (callId) => {
+  const syncCall = async (callId, { silent = false } = {}) => {
     if (!PROVIDER_CALL_ID.test(callId || '')) return;
     try {
-      setSyncing(true);
-      setSyncError(null);
+      if (!silent) {
+        setSyncing(true);
+        setSyncError(null);
+      }
       const API_BASE = import.meta.env.VITE_API_URL || '';
       const url = `${API_BASE}/api/v1/calls/${callId}/sync`.replace('//api', '/api');
 
@@ -30,18 +32,22 @@ export default function CallHistoryView() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setSyncError(data.detail || 'Failed to sync call from the voice provider.');
+        if (!silent) {
+          setSyncError(data.detail || 'Failed to sync call from the voice provider.');
+        }
         return;
       }
       if (data.success && data.call) {
-        setSelectedCall(data.call);
         setCalls(prev => prev.map(c => c.vapi_call_id === callId ? data.call : c));
+        setSelectedCall(prev => (prev?.vapi_call_id === callId ? data.call : prev));
       }
     } catch (err) {
       console.error('Sync failed:', err);
-      setSyncError('Failed to sync call from the voice provider.');
+      if (!silent) {
+        setSyncError('Failed to sync call from the voice provider.');
+      }
     } finally {
-      setSyncing(false);
+      if (!silent) setSyncing(false);
     }
   };
 
@@ -76,6 +82,27 @@ export default function CallHistoryView() {
     syncCall(selectedCall.vapi_call_id);
   }, [selectedCall?.vapi_call_id]);
 
+  useEffect(() => {
+    const liveIds = calls
+      .filter((call) => (
+        LIVE_STATUSES.has((call.status || '').toLowerCase())
+        && PROVIDER_CALL_ID.test(call.vapi_call_id || '')
+      ))
+      .map((call) => call.vapi_call_id)
+      .slice(0, 5);
+    if (!liveIds.length) return undefined;
+    const interval = setInterval(() => {
+      liveIds.forEach((id) => syncCall(id, { silent: true }));
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [calls.map((call) => `${call.vapi_call_id}:${call.status}`).join('|')]);
+
+  const formatStatus = (status) => (
+    (status || '')
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  );
+
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
       case 'completed':
@@ -95,7 +122,7 @@ export default function CallHistoryView() {
     const nested = analysis.summary || call.result?.summary;
     if (nested) return nested;
     if (LIVE_STATUSES.has((call.status || '').toLowerCase())) return 'Summary pending...';
-    if (call.endedReason) return `No summary captured. Call ended (${call.endedReason}).`;
+    if (call.endedReasonLabel) return `No summary is available. ${call.endedReasonLabel}`;
     return 'No summary available yet';
   };
 
@@ -110,11 +137,15 @@ export default function CallHistoryView() {
     if (LIVE_STATUSES.has((call.status || '').toLowerCase())) {
       return 'Transcript will be available once the call is fully processed.';
     }
-    if (call.endedReason) {
-      return `No transcript was captured. The call ended (${call.endedReason}).`;
+    if (call.endedReasonLabel) {
+      return `No transcript is available. ${call.endedReasonLabel}`;
     }
-    return 'No transcript captured for this call.';
+    return 'No transcript is available for this call.';
   };
+
+  const isAiSummary = (call) => Boolean(
+    call.summary || call.result?.analysis?.summary || call.result?.summary
+  );
 
   const getCost = (call) => {
     // If call provider provided a cost in the result, use it (with conversion + margin)
@@ -208,7 +239,7 @@ export default function CallHistoryView() {
                         call.status === 'failed' ? "bg-red-500/10 text-red-500" : "bg-amber-500/10 text-amber-500"
                       )}>
                         {getStatusIcon(call.status)}
-                        {call.status}
+                        {formatStatus(call.status)}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -220,8 +251,11 @@ export default function CallHistoryView() {
                       <span className="text-sm font-bold text-primary">{getCost(call)}</span>
                     </td>
                     <td className="px-6 py-4 max-w-xs md:max-w-sm lg:max-w-md">
-                      <p className="text-sm text-muted-foreground line-clamp-2 italic">
-                        "{getSummary(call)}"
+                      <p className={cn(
+                        "text-sm text-muted-foreground line-clamp-2",
+                        isAiSummary(call) && "italic"
+                      )}>
+                        {isAiSummary(call) ? `"${getSummary(call)}"` : getSummary(call)}
                       </p>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -265,7 +299,7 @@ export default function CallHistoryView() {
                     "w-2 h-2 rounded-full",
                     selectedCall.status === 'completed' ? "bg-emerald-500" : "bg-amber-500"
                   )} />
-                  {selectedCall.status}{selectedCall.endedReason ? ` • ${selectedCall.endedReason}` : ''} • {formatDate(selectedCall.created_at)}
+                  {formatStatus(selectedCall.status)}{selectedCall.endedReasonLabel ? ` • ${selectedCall.endedReasonLabel}` : ''} • {formatDate(selectedCall.created_at)}
                 </p>
               </div>
               <button 
@@ -295,8 +329,11 @@ export default function CallHistoryView() {
                 <h4 className="text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" /> AI Analysis
                 </h4>
-                <div className="bg-accent/20 p-4 rounded-xl border border-border italic text-sm text-balance">
-                  "{getSummary(selectedCall)}"
+                <div className={cn(
+                  "bg-accent/20 p-4 rounded-xl border border-border text-sm text-balance",
+                  isAiSummary(selectedCall) && "italic"
+                )}>
+                  {isAiSummary(selectedCall) ? `"${getSummary(selectedCall)}"` : getSummary(selectedCall)}
                 </div>
               </div>
 

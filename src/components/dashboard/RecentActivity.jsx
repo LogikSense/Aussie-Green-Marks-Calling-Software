@@ -66,7 +66,7 @@ export const RecentActivity = () => {
                   {getStatusIcon(activity.status)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-1 italic">
-                  {activity.summary || activity.endedReason || 'Call completed'}
+                  {activity.summary || activity.endedReasonLabel || 'Call completed'}
                 </p>
                 <div className="flex items-center gap-2 mt-2">
                   <Clock className="w-3 h-3 text-muted-foreground" />

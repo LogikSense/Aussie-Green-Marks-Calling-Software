@@ -137,6 +137,44 @@ def extract_ended_reason(call: Any) -> Optional[str]:
     return _nonempty_str(call.get("endedReason")) or _nonempty_str(nested.get("endedReason"))
 
 
+def explain_ended_reason(reason: Optional[str]) -> Optional[str]:
+    """User-facing outcome from a Vapi endedReason code. Never return the raw code."""
+    code = (_nonempty_str(reason) or "").lower()
+    if not code:
+        return None
+    if code.startswith("customer-ended-call"):
+        return "The recipient hung up."
+    if code.startswith("assistant-ended") or code == "assistant-said-end-call-phrase":
+        return "The assistant ended the call."
+    if code == "customer-did-not-answer":
+        return "The recipient did not answer."
+    if code == "customer-busy":
+        return "The recipient's line was busy."
+    if code == "voicemail":
+        return "The call reached voicemail."
+    if code == "silence-timed-out":
+        return "The call ended after a period of silence."
+    if code == "exceeded-max-duration":
+        return "The call reached its maximum duration."
+    if code == "manually-canceled":
+        return "The call was canceled."
+    if "twilio-completed-call" in code or "sip-completed-call" in code or code == "vonage-completed":
+        return "The phone carrier ended the call."
+    if "failed-to-connect" in code or code == "vonage-rejected":
+        return "The phone carrier could not connect the call."
+    if "misdialed" in code:
+        return "The destination number was invalid."
+    if code.startswith("call.start.error") or code in {"assistant-not-found", "assistant-not-valid"}:
+        return "The call could not start."
+    if "vapifault" in code or code == "worker-shutdown":
+        return "The voice platform ended the call due to an internal error."
+    if "providerfault" in code or "pipeline-error" in code or "pipeline-no-available" in code:
+        return "A voice or telephony provider error ended the call."
+    if "error" in code or "failed" in code:
+        return "The call ended due to a provider error."
+    return "The call ended."
+
+
 def extract_transcript(call: Any) -> Optional[str]:
     if not _is_mapping(call):
         return None
@@ -230,6 +268,7 @@ def serialize_lead(lead: CampaignLead) -> dict:
         "summary": extract_summary(call),
         "recordingUrl": extract_recording_url(call),
         "endedReason": extract_ended_reason(call),
+        "endedReasonLabel": explain_ended_reason(extract_ended_reason(call)),
     }
 
 
