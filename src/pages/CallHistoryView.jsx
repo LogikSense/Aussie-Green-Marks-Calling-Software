@@ -3,6 +3,9 @@ import { Search, PhoneIncoming, Play, FileText, Calendar, Clock, User, Phone, Ch
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 
+const PROVIDER_CALL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LIVE_STATUSES = new Set(['calling', 'in-progress', 'ringing', 'queued', 'pending', 'scheduled']);
+
 export default function CallHistoryView() {
   const { getAuthHeaders } = useAuth();
   const [calls, setCalls] = useState([]);
@@ -10,27 +13,33 @@ export default function CallHistoryView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCall, setSelectedCall] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState(null);
 
   const syncCall = async (callId) => {
+    if (!PROVIDER_CALL_ID.test(callId || '')) return;
     try {
       setSyncing(true);
+      setSyncError(null);
       const API_BASE = import.meta.env.VITE_API_URL || '';
       const url = `${API_BASE}/api/v1/calls/${callId}/sync`.replace('//api', '/api');
-      
+
       const res = await fetch(url, {
         method: 'POST',
         headers: getAuthHeaders()
       });
-      
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setSelectedCall(data.call);
-          setCalls(prev => prev.map(c => c.vapi_call_id === callId ? data.call : c));
-        }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSyncError(data.detail || 'Failed to sync call from the voice provider.');
+        return;
+      }
+      if (data.success && data.call) {
+        setSelectedCall(data.call);
+        setCalls(prev => prev.map(c => c.vapi_call_id === callId ? data.call : c));
       }
     } catch (err) {
       console.error('Sync failed:', err);
+      setSyncError('Failed to sync call from the voice provider.');
     } finally {
       setSyncing(false);
     }
@@ -61,6 +70,12 @@ export default function CallHistoryView() {
     fetchCalls();
   }, []);
 
+  useEffect(() => {
+    if (!selectedCall?.vapi_call_id || selectedCall.transcript) return;
+    if (!PROVIDER_CALL_ID.test(selectedCall.vapi_call_id)) return;
+    syncCall(selectedCall.vapi_call_id);
+  }, [selectedCall?.vapi_call_id]);
+
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
       case 'completed':
@@ -75,25 +90,30 @@ export default function CallHistoryView() {
   };
 
   const getSummary = (call) => {
-    if (!call.result) return 'No summary available yet';
-    
-    // Call provider summary structure
-    const analysis = call.result.analysis || {};
-    return analysis.summary || call.result.summary || 'Summary pending...';
+    if (call.summary) return call.summary;
+    const analysis = call.result?.analysis || {};
+    const nested = analysis.summary || call.result?.summary;
+    if (nested) return nested;
+    if (LIVE_STATUSES.has((call.status || '').toLowerCase())) return 'Summary pending...';
+    if (call.endedReason) return `No summary captured. Call ended (${call.endedReason}).`;
+    return 'No summary available yet';
   };
 
   const getRecordingUrl = (call) => {
-    return call.result?.recordingUrl || call.result?.artifact?.recordingUrl;
+    return call.recordingUrl || call.result?.recordingUrl || call.result?.artifact?.recordingUrl;
   };
 
   const getTranscript = (call) => {
-    if (!call.result) return 'Transcript will be available once the call is fully processed.';
-    
-    // Call provider stores transcript in artifact or direct
-    const transcript = call.result.transcript || call.result.artifact?.transcript;
-    if (transcript) return transcript;
-    
-    return 'No transcript generated for this call.';
+    if (call.transcript) return call.transcript;
+    const nested = call.result?.transcript || call.result?.artifact?.transcript;
+    if (nested) return nested;
+    if (LIVE_STATUSES.has((call.status || '').toLowerCase())) {
+      return 'Transcript will be available once the call is fully processed.';
+    }
+    if (call.endedReason) {
+      return `No transcript was captured. The call ended (${call.endedReason}).`;
+    }
+    return 'No transcript captured for this call.';
   };
 
   const getCost = (call) => {
@@ -245,7 +265,7 @@ export default function CallHistoryView() {
                     "w-2 h-2 rounded-full",
                     selectedCall.status === 'completed' ? "bg-emerald-500" : "bg-amber-500"
                   )} />
-                  {selectedCall.status} • {formatDate(selectedCall.created_at)}
+                  {selectedCall.status}{selectedCall.endedReason ? ` • ${selectedCall.endedReason}` : ''} • {formatDate(selectedCall.created_at)}
                 </p>
               </div>
               <button 
@@ -291,6 +311,9 @@ export default function CallHistoryView() {
               </div>
             </div>
 
+            {syncError && (
+              <div className="px-6 text-sm text-red-500">{syncError}</div>
+            )}
             <div className="p-6 border-t border-border bg-accent/5 flex justify-end gap-3">
               <button 
                 onClick={() => syncCall(selectedCall.vapi_call_id)}

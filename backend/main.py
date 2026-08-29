@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Security
-from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -21,6 +20,7 @@ from database import init_db, get_db
 from sqlalchemy.orm import Session
 from auth import verify_jwt_or_api_key, get_current_user_jwt
 from models import Campaign, CampaignLead, Customer, Wallet, Transaction, User
+import call_service as call_svc
 import customer_service as cs
 import settings_service as ss
 from routers.auth_router import router as auth_router
@@ -1234,13 +1234,18 @@ async def list_calls(
     query = db.query(CampaignLead)
     if status:
         query = query.filter(CampaignLead.status == status)
-    
+
     total = query.count()
-    leads = query.offset(offset).limit(limit).all()
-    
+    leads = (
+        query.order_by(CampaignLead.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
     return {
         "success": True,
-        "calls": leads,
+        "calls": [call_svc.serialize_lead(lead) for lead in leads],
         "total": total,
         "limit": limit,
         "offset": offset
@@ -1249,48 +1254,34 @@ async def list_calls(
 @app.get("/api/v1/calls/{call_id}", dependencies=[Depends(get_current_user_jwt)])
 async def get_call(call_id: str, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
     """Get a specific call by ID or Vapi Call ID"""
-    lead = db.query(CampaignLead).filter(
-        (CampaignLead.vapi_call_id == call_id) | (CampaignLead.id == call_id)
-    ).first()
+    lead = db.query(CampaignLead).filter(CampaignLead.vapi_call_id == call_id).first()
+    if not lead and call_id.isdigit():
+        lead = db.query(CampaignLead).filter(CampaignLead.id == int(call_id)).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Call not found")
-    return {"success": True, "call": lead}
+    return {"success": True, "call": call_svc.serialize_lead(lead)}
 
 @app.post("/api/v1/calls/{call_id}/sync", dependencies=[Depends(get_current_user_jwt)])
 async def sync_call(call_id: str, user: User = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
-    """Manually sync call data from Vapi (needed for local development without webhooks)"""
+    """Pull the latest provider call snapshot (transcript, analysis, status)."""
     lead = db.query(CampaignLead).filter(CampaignLead.vapi_call_id == call_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Call record not found")
-    
+
     config = ss.get_settings(db, user.id) or {}
     vapi_key = (config.get("vapiApiKey") or "").strip()
-    
+
     if not vapi_key:
         raise HTTPException(status_code=400, detail="Vapi API key not configured in settings")
-        
+
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://api.vapi.ai/call/{call_id}",
-                headers={"Authorization": f"Bearer {vapi_key}"},
-                timeout=10.0
-            )
-            if response.status_code == 200:
-                vapi_data = response.json()
-                lead.result = vapi_data
-                status = vapi_data.get("status")
-                if status in ["ended", "completed"]:
-                    lead.status = "completed"
-                else:
-                    lead.status = status
-                db.commit()
-                db.refresh(lead)
-                return {"success": True, "call": jsonable_encoder(lead)}
-            raise HTTPException(
-                status_code=502,
-                detail=f"Voice provider returned {response.status_code} while syncing the call.",
-            )
+        provider_call = await call_svc.fetch_call(vapi_key, call_id)
+        call_svc.apply_provider_call(lead, provider_call)
+        db.commit()
+        db.refresh(lead)
+        return {"success": True, "call": call_svc.serialize_lead(lead)}
+    except call_svc.VoiceProviderError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
     except HTTPException:
         raise
     except Exception as e:
@@ -1307,13 +1298,20 @@ async def get_completed_calls(
     Get completed call results
     """
     query = db.query(CampaignLead).filter(CampaignLead.status == "completed")
-    
+
     total = query.count()
-    leads = query.offset(offset).limit(limit).all()
-    
+    leads = (
+        query.order_by(CampaignLead.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    serialized = [call_svc.serialize_lead(lead) for lead in leads]
+
     return {
         "success": True,
-        "results": leads,
+        "calls": serialized,
+        "results": serialized,
         "total": total,
         "limit": limit,
         "offset": offset
@@ -1325,39 +1323,30 @@ async def vapi_webhook_api(payload: dict, db: Session = Depends(get_db)):
     Webhook endpoint for receiving Vapi call updates.
     Updates CampaignLead status in database.
     """
-    # Process webhook payload
-    # Based on Vapi webhook schema
-    vapi_call_id = payload.get("call", {}).get("id") or payload.get("id")
-    status = payload.get("status") or payload.get("call", {}).get("status")
-    
+    provider_call = call_svc.unwrap_provider_payload(payload)
+    vapi_call_id = (
+        provider_call.get("id")
+        or payload.get("id")
+        or (payload.get("call") or {}).get("id")
+        or ((payload.get("message") or {}).get("call") or {}).get("id")
+    )
+
     if not vapi_call_id:
         return {"success": False, "message": "No call ID found in payload"}
 
-    # Update call status in database
     lead = db.query(CampaignLead).filter(CampaignLead.vapi_call_id == vapi_call_id).first()
-    if lead:
-        # Store full result for analysis and stats
-        lead.result = payload
-        
-        # Map Vapi status to our internal status
-        if status in ["ended", "completed"]:
-            lead.status = "completed"
-        elif status in ["failed", "error"]:
-            lead.status = "failed"
-        else:
-            lead.status = status
-            
+    if not lead:
+        return {"success": False, "message": "Lead not found for this call ID"}
+
+    if provider_call:
+        call_svc.apply_provider_call(lead, provider_call)
         db.commit()
-        return {"success": True, "message": f"Updated lead {vapi_call_id} to {status}"}
-    
-    return {"success": False, "message": "Lead not found for this call ID"}
-    
-    return {
-        "success": True,
-        "message": "Webhook received",
-        "callId": call_id,
-        "status": status
-    }
+        return {
+            "success": True,
+            "message": f"Updated lead {vapi_call_id} to {lead.status}",
+        }
+
+    return {"success": True, "message": "Webhook received"}
 
 
 # --- BILLING ROUTES ---
@@ -1472,11 +1461,8 @@ async def get_statistics(db: Session = Depends(get_db)):
                 reached_human += 1
             elif reason == "voicemail":
                 voicemails += 1
-            elif reason in ["phone-call-error", "customer-busy", "customer-did-not-answer", "no-answer", "error"]:
+            elif lead.status == "completed" and reason:
                 unsuccessful += 1
-            elif lead.status == "completed":
-                # Fallback if reason is unknown but status is completed
-                reached_human += 1
     
     # Calculate answer rate safely
     answer_rate = "0%"
