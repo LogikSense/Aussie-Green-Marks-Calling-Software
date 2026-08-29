@@ -28,6 +28,8 @@ TWILIO_API_KEY = (os.getenv("TWILIO_API_KEY") or "").strip()
 TWILIO_API_SECRET = (os.getenv("TWILIO_API_SECRET") or "").strip()
 TWILIO_TWIML_APP_SID = (os.getenv("TWILIO_TWIML_APP_SID") or "").strip()
 
+CALL_CREDIT_COST = float(os.getenv("CALL_CREDIT_COST", "0.50"))
+
 _api_keys_raw = os.getenv("API_KEYS", "")
 API_KEYS = [k.strip() for k in _api_keys_raw.split(",") if k.strip()] if _api_keys_raw else []
 if not API_KEYS:

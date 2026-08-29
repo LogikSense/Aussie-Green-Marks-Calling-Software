@@ -34,6 +34,8 @@ export default function SoftphoneWindow({ onClose }) {
   const [device, setDevice] = useState(null);
   const [activeConnection, setActiveConnection] = useState(null);
   const [tokenError, setTokenError] = useState('');
+  const [dialNotice, setDialNotice] = useState('');
+  const [placing, setPlacing] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -128,27 +130,39 @@ export default function SoftphoneWindow({ onClose }) {
   }, [status, user, getAuthHeaders, API_BASE]);
 
   const handleDial = async () => {
-    if (!dialNumber || !device) return;
-    setCallState('calling');
+    if (!dialNumber || placing) return;
+    setPlacing(true);
+    setTokenError('');
+    setDialNotice('');
     try {
-      const params = { To: dialNumber, OutboundMode: outboundMode };
-      const connection = await device.connect({ params });
-      
-      connection.on('accept', () => {
-        setCallState('active');
-      });
-      
-      connection.on('disconnect', () => {
-        setCallState('idle');
-        setActiveConnection(null);
-        setDialNumber('');
-        setShowTransferModal(false);
+      const displayName = (user?.full_name || user?.email || 'Outbound').trim();
+      const [firstName, ...rest] = displayName.split(/\s+/);
+      const res = await fetch(`${API_BASE}/api/trigger-manual-call`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({
+          firstName: firstName || 'Outbound',
+          lastName: rest.join(' '),
+          phone: dialNumber.trim(),
+          countryCode: '+61'
+        })
       });
 
-      setActiveConnection(connection);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = typeof data.detail === 'string' ? data.detail : 'Failed to place AI call.';
+        throw new Error(detail);
+      }
+
+      setDialNotice(data.message || 'AI call placed. The recipient will speak with your Vapi agent.');
     } catch (err) {
       console.error('Dial error:', err);
-      setCallState('idle');
+      setTokenError(err.message || 'Failed to place AI call.');
+    } finally {
+      setPlacing(false);
     }
   };
 
@@ -288,6 +302,11 @@ export default function SoftphoneWindow({ onClose }) {
                   {tokenError}
                 </p>
               )}
+              {dialNotice && (
+                <p className="text-xs text-emerald-400 font-medium bg-emerald-950/40 border border-emerald-800 p-2 rounded-lg text-center leading-tight">
+                  {dialNotice}
+                </p>
+              )}
             </div>
 
             {/* Keypad */}
@@ -306,11 +325,11 @@ export default function SoftphoneWindow({ onClose }) {
             <div className="mt-4 flex justify-center gap-4">
               <button 
                 onClick={handleDial}
-                disabled={!dialNumber || status === 'Offline'}
+                disabled={!dialNumber || placing}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <Phone className="w-5 h-5 fill-current" />
-                Dial Out
+                {placing ? 'Placing AI call…' : 'Dial Out'}
               </button>
             </div>
           </div>

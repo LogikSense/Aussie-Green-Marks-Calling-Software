@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PhoneCall, MonitorSmartphone } from 'lucide-react';
 import SoftphoneWindow from '../components/SoftphoneWindow';
+import ManualDialer from './ManualDialer';
 
 export default function ManualCallingView() {
   const [isSoftphoneOpen, setIsSoftphoneOpen] = useState(false);
@@ -42,6 +43,8 @@ export default function ManualCallingView() {
       {isSoftphoneOpen && (
         <SoftphoneWindow onClose={() => setIsSoftphoneOpen(false)} />
       )}
+
+      <ManualDialer />
     </div>
   );
 }

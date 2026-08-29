@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Security
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -15,7 +16,7 @@ import pytz
 import logging
 import asyncio
 
-from config import API_KEYS
+from config import API_KEYS, CALL_CREDIT_COST
 from database import init_db, get_db
 from sqlalchemy.orm import Session
 from auth import verify_jwt_or_api_key, get_current_user_jwt
@@ -513,15 +514,11 @@ async def manual_dial(request: ManualCallRequest, user: User = Depends(get_curre
     print(f"DEBUG: Manual dial hit for {request.firstName}")
     logger.info(f"☎️ Manual dial request: {request.firstName} {request.lastName} ({request.phone})")
     
-    # 0. Check Wallet Balance
-    # Realistic AU Cost: ~0.15 USD (Vapi) + ~0.15 USD (ElevenLabs) + ~0.05 USD (Telco) = ~$0.35 USD/min
-    # In AUD: ~$0.55/min. We'll set a flat fee of $0.50 for the connection/trigger.
-    CALL_COST = 0.50 
     wallet = get_or_create_wallet(db, user.id)
-    if wallet.balance < CALL_COST:
+    if wallet.balance < CALL_CREDIT_COST:
         raise HTTPException(
             status_code=402, 
-            detail=f"Insufficient credits (${wallet.balance:.2f}). Please top up to make calls."
+            detail=f"Insufficient credits (${wallet.balance:.2f}). Top up on Billing to place AI calls."
         )
 
     # 1. Get settings if not provided
@@ -543,7 +540,7 @@ async def manual_dial(request: ManualCallRequest, user: User = Depends(get_curre
 
     # 2. Format phone number
     clean_phone = "".join(filter(str.isdigit, request.phone))
-    code = request.countryCode.replace("+", "")
+    code = (request.countryCode or "+61").replace("+", "")
     
     if request.phone.startswith("+"):
         phone = request.phone
@@ -617,10 +614,10 @@ async def manual_dial(request: ManualCallRequest, user: User = Depends(get_curre
             call_id = result.get("id")
             
             # 7. Deduct from wallet & Log Transaction
-            wallet.balance -= CALL_COST
+            wallet.balance -= CALL_CREDIT_COST
             usage_trans = Transaction(
                 user_id=user.id,
-                amount=-CALL_COST,
+                amount=-CALL_CREDIT_COST,
                 type="usage",
                 description=f"AI Call to {phone}",
                 status="completed"
@@ -640,16 +637,18 @@ async def manual_dial(request: ManualCallRequest, user: User = Depends(get_curre
             db.add(lead)
             db.commit()
             
-            msg = f"Call scheduled for {earliest_at}" if earliest_at else "Call initiated successfully"
+            msg = f"Call scheduled for {earliest_at}" if earliest_at else "AI call placed. The recipient will speak with your Vapi agent."
             return {
                 "success": True, 
                 "callId": call_id, 
                 "message": msg,
                 "new_balance": wallet.balance
             }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Manual dial failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=502, detail="Failed to place outbound AI call.")
 
 @app.post("/api/calls/schedule")
 async def schedule_calls(request: ScheduleCallRequestWithConfig, db: Session = Depends(get_db)):
@@ -1258,17 +1257,17 @@ async def get_call(call_id: str, user = Depends(get_current_user_jwt), db: Sessi
     return {"success": True, "call": lead}
 
 @app.post("/api/v1/calls/{call_id}/sync", dependencies=[Depends(get_current_user_jwt)])
-async def sync_call(call_id: str, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+async def sync_call(call_id: str, user: User = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
     """Manually sync call data from Vapi (needed for local development without webhooks)"""
     lead = db.query(CampaignLead).filter(CampaignLead.vapi_call_id == call_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Call record not found")
     
-    config = ss.get_settings(db, user.id)
-    vapi_key = config.vapi_api_key
+    config = ss.get_settings(db, user.id) or {}
+    vapi_key = (config.get("vapiApiKey") or "").strip()
     
     if not vapi_key:
-        return {"success": False, "message": "Vapi API key not configured in settings"}
+        raise HTTPException(status_code=400, detail="Vapi API key not configured in settings")
         
     try:
         async with httpx.AsyncClient() as client:
@@ -1286,11 +1285,17 @@ async def sync_call(call_id: str, user = Depends(get_current_user_jwt), db: Sess
                 else:
                     lead.status = status
                 db.commit()
-                return {"success": True, "call": lead}
-            else:
-                return {"success": False, "message": f"Vapi API returned {response.status_code}"}
+                db.refresh(lead)
+                return {"success": True, "call": jsonable_encoder(lead)}
+            raise HTTPException(
+                status_code=502,
+                detail=f"Voice provider returned {response.status_code} while syncing the call.",
+            )
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        logger.error("Call sync failed: %s", e)
+        raise HTTPException(status_code=502, detail="Failed to sync call from voice provider.")
 
 @app.get("/api/v1/calls/results/completed", dependencies=[Depends(verify_jwt_or_api_key)])
 async def get_completed_calls(

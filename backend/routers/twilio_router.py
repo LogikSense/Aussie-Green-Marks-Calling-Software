@@ -165,5 +165,30 @@ async def assign_number(number_id: int, req: AssignNumberRequest, db: Session = 
 
 @router.get("/my-numbers")
 async def get_my_numbers(db: Session = Depends(get_db), current_user: User = Depends(get_current_user_jwt)):
+    if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+        try:
+            client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+            for incoming in client.incoming_phone_numbers.list(limit=50):
+                e164 = incoming.phone_number
+                row = db.query(TwilioPhoneNumber).filter(TwilioPhoneNumber.phone_number == e164).first()
+                if not row:
+                    row = TwilioPhoneNumber(
+                        phone_number=e164,
+                        friendly_name=incoming.friendly_name,
+                        status="active",
+                        assigned_to=current_user.id,
+                        assignment_type="primary",
+                        tenant_id=current_user.tenant_id,
+                    )
+                    db.add(row)
+                elif row.assigned_to is None:
+                    row.assigned_to = current_user.id
+                    if not row.assignment_type:
+                        row.assignment_type = "primary"
+            db.commit()
+        except Exception as e:
+            logger.error("Failed to sync Twilio incoming numbers: %s", e)
+            db.rollback()
+
     numbers = db.query(TwilioPhoneNumber).filter(TwilioPhoneNumber.assigned_to == current_user.id).all()
     return {"numbers": [{"id": n.id, "phone_number": n.phone_number, "type": n.assignment_type} for n in numbers]}
