@@ -4,7 +4,8 @@ from datetime import datetime
 from pathlib import Path
 
 load_dotenv = __import__("dotenv", fromlist=["load_dotenv"]).load_dotenv
-load_dotenv()
+_ENV_FILE = Path(__file__).resolve().parent / ".env"
+load_dotenv(_ENV_FILE, override=True)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -20,6 +21,12 @@ else:
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_EXPIRE_MINUTES", "60"))
+
+TWILIO_ACCOUNT_SID = (os.getenv("TWILIO_ACCOUNT_SID") or "").strip()
+TWILIO_AUTH_TOKEN = (os.getenv("TWILIO_AUTH_TOKEN") or "").strip()
+TWILIO_API_KEY = (os.getenv("TWILIO_API_KEY") or "").strip()
+TWILIO_API_SECRET = (os.getenv("TWILIO_API_SECRET") or "").strip()
+TWILIO_TWIML_APP_SID = (os.getenv("TWILIO_TWIML_APP_SID") or "").strip()
 
 _api_keys_raw = os.getenv("API_KEYS", "")
 API_KEYS = [k.strip() for k in _api_keys_raw.split(",") if k.strip()] if _api_keys_raw else []

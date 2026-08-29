@@ -19,14 +19,21 @@ from config import API_KEYS
 from database import init_db, get_db
 from sqlalchemy.orm import Session
 from auth import verify_jwt_or_api_key, get_current_user_jwt
-from models import Campaign, CampaignLead, Customer, Wallet, Transaction
+from models import Campaign, CampaignLead, Customer, Wallet, Transaction, User
 import customer_service as cs
 import settings_service as ss
 from routers.auth_router import router as auth_router
-from routers.twilio_router import router as twilio_router
-from routers.telephony_router import router as telephony_router
-from routers.spam_protection_router import router as spam_protection_router
 from routers.chatwoot_router import router as chatwoot_router
+
+try:
+    from routers.twilio_router import router as twilio_router
+    from routers.telephony_router import router as telephony_router
+    from routers.spam_protection_router import router as spam_protection_router
+    TWILIO_ROUTERS_AVAILABLE = True
+except ImportError as exc:
+    TWILIO_ROUTERS_AVAILABLE = False
+    twilio_router = telephony_router = spam_protection_router = None
+    _twilio_import_error = exc
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,10 +96,13 @@ def optional_api_key(authorization: Optional[str] = Header(None, alias="Authoriz
     return None
 
 app.include_router(auth_router)
-app.include_router(twilio_router)
-app.include_router(telephony_router)
-app.include_router(spam_protection_router)
 app.include_router(chatwoot_router)
+if TWILIO_ROUTERS_AVAILABLE:
+    app.include_router(twilio_router)
+    app.include_router(telephony_router)
+    app.include_router(spam_protection_router)
+else:
+    logger.warning("Twilio routers disabled — install twilio: pip install twilio (%s)", _twilio_import_error)
 
 class CustomerData(BaseModel):
     customerId: str
@@ -496,7 +506,7 @@ async def import_customers_batch(batch: BatchCustomerImport, db: Session = Depen
 
 @app.post("/api/trigger-manual-call", dependencies=[Depends(get_current_user_jwt)])
 @app.post("/api/manual-call-trigger", dependencies=[Depends(get_current_user_jwt)])
-async def manual_dial(request: ManualCallRequest, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+async def manual_dial(request: ManualCallRequest, user: User = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
     """
     Manually trigger a call. Can be immediate or scheduled.
     """
@@ -507,7 +517,7 @@ async def manual_dial(request: ManualCallRequest, user = Depends(get_current_use
     # Realistic AU Cost: ~0.15 USD (Vapi) + ~0.15 USD (ElevenLabs) + ~0.05 USD (Telco) = ~$0.35 USD/min
     # In AUD: ~$0.55/min. We'll set a flat fee of $0.50 for the connection/trigger.
     CALL_COST = 0.50 
-    wallet = get_or_create_wallet(db, user["id"])
+    wallet = get_or_create_wallet(db, user.id)
     if wallet.balance < CALL_COST:
         raise HTTPException(
             status_code=402, 
@@ -609,7 +619,7 @@ async def manual_dial(request: ManualCallRequest, user = Depends(get_current_use
             # 7. Deduct from wallet & Log Transaction
             wallet.balance -= CALL_COST
             usage_trans = Transaction(
-                user_id=user["id"],
+                user_id=user.id,
                 amount=-CALL_COST,
                 type="usage",
                 description=f"AI Call to {phone}",
@@ -1357,8 +1367,8 @@ def get_or_create_wallet(db: Session, user_id: int):
     return wallet
 
 @app.get("/api/v1/billing/balance")
-async def get_balance(user: dict = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
-    wallet = get_or_create_wallet(db, user["id"])
+async def get_balance(user: User = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    wallet = get_or_create_wallet(db, user.id)
     return {
         "success": True,
         "balance": wallet.balance,
@@ -1366,8 +1376,8 @@ async def get_balance(user: dict = Depends(get_current_user_jwt), db: Session = 
     }
 
 @app.get("/api/v1/billing/transactions")
-async def get_transactions(user: dict = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
-    transactions = db.query(Transaction).filter(Transaction.user_id == user["id"]).order_by(Transaction.created_at.desc()).all()
+async def get_transactions(user: User = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+    transactions = db.query(Transaction).filter(Transaction.user_id == user.id).order_by(Transaction.created_at.desc()).all()
     return {
         "success": True,
         "transactions": [
@@ -1383,18 +1393,18 @@ async def get_transactions(user: dict = Depends(get_current_user_jwt), db: Sessi
     }
 
 @app.post("/api/v1/billing/topup")
-async def top_up(req: TopUpRequest, user: dict = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
+async def top_up(req: TopUpRequest, user: User = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be greater than zero")
     
-    wallet = get_or_create_wallet(db, user["id"])
+    wallet = get_or_create_wallet(db, user.id)
     
     # Update balance
     wallet.balance += req.amount
     
     # Create transaction
     transaction = Transaction(
-        user_id=user["id"],
+        user_id=user.id,
         amount=req.amount,
         type="topup",
         description="Wallet Top Up (Simulated)",

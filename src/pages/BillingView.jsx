@@ -22,10 +22,12 @@ export default function BillingView() {
   const [topUpAmount, setTopUpAmount] = useState('');
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const fetchBillingData = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const API_BASE = import.meta.env.VITE_API_URL || '';
       
       const [balRes, transRes] = await Promise.all([
@@ -33,18 +35,20 @@ export default function BillingView() {
         fetch(`${API_BASE}/api/v1/billing/transactions`, { headers: getAuthHeaders() })
       ]);
 
-      if (balRes.ok) {
-        const data = await balRes.json();
-        setBalance(data.balance);
-        setCurrency(data.currency);
+      if (!balRes.ok || !transRes.ok) {
+        setLoadError('Unable to load wallet data. Please retry.');
+        return;
       }
 
-      if (transRes.ok) {
-        const data = await transRes.json();
-        setTransactions(data.transactions);
-      }
+      const data = await balRes.json();
+      setBalance(data.balance);
+      setCurrency(data.currency);
+
+      const transData = await transRes.json();
+      setTransactions(transData.transactions || []);
     } catch (err) {
       console.error('Error fetching billing data:', err);
+      setLoadError('Unable to load wallet data. Please retry.');
     } finally {
       setLoading(false);
     }
@@ -96,6 +100,12 @@ export default function BillingView() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Billing & Credits</h1>
           <p className="text-muted-foreground mt-1 text-lg">Manage your wallet and usage credits.</p>
+          {loadError && (
+            <p className="mt-2 text-sm text-rose-500 font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {loadError}
+            </p>
+          )}
         </div>
         <button 
           onClick={() => setIsTopUpModalOpen(true)}

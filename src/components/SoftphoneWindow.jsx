@@ -78,7 +78,16 @@ export default function SoftphoneWindow({ onClose }) {
         });
 
         if (!res.ok) {
-          throw new Error('Failed to fetch Twilio token. Ensure backend Twilio settings are configured.');
+          let detail = 'Voice telephony is not configured. Contact an administrator.';
+          try {
+            const body = await res.json();
+            if (typeof body?.detail === 'string' && body.detail) {
+              detail = body.detail;
+            }
+          } catch {
+            // Keep the fallback message when the body is not JSON.
+          }
+          throw new Error(detail);
         }
 
         const data = await res.json();
