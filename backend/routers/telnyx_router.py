@@ -1,10 +1,10 @@
-import os
 import logging
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from auth import get_current_user_jwt
+from config import TELNYX_API_KEY
 from database import get_db
 from models import TwilioPhoneNumber, User
 
@@ -17,14 +17,31 @@ router = APIRouter(
 
 TELNYX_BASE = "https://api.telnyx.com/v2"
 
+
 def _get_headers():
-    key = os.getenv("TELNYX_API_KEY", "").strip()
-    if not key:
+    if not TELNYX_API_KEY:
         raise HTTPException(status_code=503, detail="Telnyx API key not configured on this server.")
+    if not TELNYX_API_KEY.startswith("KEY_"):
+        raise HTTPException(
+            status_code=503,
+            detail="Telnyx API key is not a v2 key. In Mission Control → API Keys, copy a key that starts with KEY_.",
+        )
     return {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {TELNYX_API_KEY}",
+        "Content-Type": "application/json",
     }
+
+
+def _raise_for_telnyx(res: httpx.Response, fallback: str) -> None:
+    if res.status_code < 400:
+        return
+    logger.error("Telnyx API error: %s", res.text)
+    if res.status_code in (401, 403):
+        raise HTTPException(
+            status_code=401,
+            detail="Telnyx rejected the API key. Copy a v2 key from Mission Control (starts with KEY_).",
+        )
+    raise HTTPException(status_code=res.status_code if res.status_code < 500 else 502, detail=fallback)
 
 @router.get("/numbers")
 async def search_telnyx_numbers(country: str = "US", area_code: str = None, current_user: User = Depends(get_current_user_jwt)):
@@ -39,9 +56,7 @@ async def search_telnyx_numbers(country: str = "US", area_code: str = None, curr
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(f"{TELNYX_BASE}/available_phone_numbers", headers=headers, params=params)
-            if res.status_code != 200:
-                logger.error("Telnyx API error: %s", res.text)
-                raise HTTPException(status_code=res.status_code, detail="Failed to fetch available numbers from Telnyx.")
+            _raise_for_telnyx(res, "Failed to fetch available numbers from Telnyx.")
             
             data = res.json().get("data", [])
             results = []
@@ -53,6 +68,8 @@ async def search_telnyx_numbers(country: str = "US", area_code: str = None, curr
                     "region": item.get("administrative_area", "")
                 })
             return {"numbers": results}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Error searching Telnyx numbers: %s", e)
         raise HTTPException(status_code=502, detail="Failed to search numbers from Telnyx API.")
@@ -69,9 +86,7 @@ async def purchase_telnyx_number(req: TelnyxPurchaseRequest, db: Session = Depen
     try:
         async with httpx.AsyncClient() as client:
             res = await client.post(f"{TELNYX_BASE}/number_orders", headers=headers, json=body)
-            if res.status_code >= 400:
-                logger.error("Telnyx purchase error: %s", res.text)
-                raise HTTPException(status_code=res.status_code, detail=f"Telnyx purchase failed: {res.text}")
+            _raise_for_telnyx(res, "Failed to order number from Telnyx.")
                 
             db_num = TwilioPhoneNumber(
                 phone_number=req.phone_number,
@@ -86,6 +101,8 @@ async def purchase_telnyx_number(req: TelnyxPurchaseRequest, db: Session = Depen
             db.commit()
             db.refresh(db_num)
             return {"success": True, "phone_number": db_num.phone_number}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Error purchasing Telnyx number: %s", e)
         raise HTTPException(status_code=502, detail="Failed to order number from Telnyx.")

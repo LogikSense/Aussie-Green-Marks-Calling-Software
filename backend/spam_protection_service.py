@@ -4,6 +4,7 @@ import httpx
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import TwilioPhoneNumber, AuditLog, User
+from config import TELNYX_API_KEY
 from twilio.rest import Client
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ def rotate_phone_number_if_needed(db: Session, number_id: int, min_threshold: in
     
     # 1. Release the phone number programmatically
     if provider == "telnyx":
-        telnyx_key = os.getenv("TELNYX_API_KEY", "").strip()
+        telnyx_key = TELNYX_API_KEY
         if telnyx_key:
             try:
                 headers = {"Authorization": f"Bearer {telnyx_key}"}
@@ -136,7 +137,7 @@ def rotate_phone_number_if_needed(db: Session, number_id: int, min_threshold: in
     else:
         # 3. Auto-purchase replacement number via Provider API
         if provider == "telnyx":
-            telnyx_key = os.getenv("TELNYX_API_KEY", "").strip()
+            telnyx_key = TELNYX_API_KEY
             if telnyx_key:
                 try:
                     headers = {
