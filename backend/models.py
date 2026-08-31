@@ -130,6 +130,7 @@ class TwilioPhoneNumber(Base):
     assigned_to = Column(Integer, nullable=True) # user_id
     assignment_type = Column(String(50), nullable=True) # primary, secondary
     status = Column(String(50), default="active") # active, released, retired
+    provider = Column(String(50), default="twilio")
     capabilities = Column(JSON, nullable=True)
     tenant_id = Column(Integer, nullable=True, default=1)
     

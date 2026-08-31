@@ -25,6 +25,7 @@ import customer_service as cs
 import settings_service as ss
 from routers.auth_router import router as auth_router
 from routers.chatwoot_router import router as chatwoot_router
+from routers.telnyx_router import router as telnyx_router
 
 try:
     from routers.twilio_router import router as twilio_router
@@ -98,6 +99,7 @@ def optional_api_key(authorization: Optional[str] = Header(None, alias="Authoriz
 
 app.include_router(auth_router)
 app.include_router(chatwoot_router)
+app.include_router(telnyx_router)
 if TWILIO_ROUTERS_AVAILABLE:
     app.include_router(twilio_router)
     app.include_router(telephony_router)

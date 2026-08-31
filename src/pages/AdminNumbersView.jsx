@@ -12,6 +12,7 @@ export default function AdminNumbersView() {
   
   const [myNumbers, setMyNumbers] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
+  const [activeProvider, setActiveProvider] = useState('twilio'); // twilio, telnyx
   
   const [searchParams, setSearchParams] = useState({
     country: 'US',
@@ -53,7 +54,7 @@ export default function AdminNumbersView() {
         query.append('area_code', searchParams.areaCode);
       }
 
-      const res = await fetch(`${API_BASE}/api/twilio/numbers?${query.toString()}`, {
+      const res = await fetch(`${API_BASE}/api/${activeProvider}/numbers?${query.toString()}`, {
         headers: getAuthHeaders()
       });
       
@@ -76,7 +77,7 @@ export default function AdminNumbersView() {
     setMessage({ type: '', text: '' });
     
     try {
-      const res = await fetch(`${API_BASE}/api/twilio/numbers/purchase`, {
+      const res = await fetch(`${API_BASE}/api/${activeProvider}/numbers/purchase`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,7 +88,7 @@ export default function AdminNumbersView() {
       
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: 'success', text: `Successfully purchased ${phoneNumber}` });
+        setMessage({ type: 'success', text: `Successfully purchased ${phoneNumber} via ${activeProvider}` });
         setSearchResults(searchResults.filter(n => n.phone_number !== phoneNumber));
         fetchMyNumbers();
       } else {
@@ -125,6 +126,22 @@ export default function AdminNumbersView() {
             <Search className="w-5 h-5 text-primary" />
             Search New Numbers
           </h3>
+
+          {/* Provider Selection Tabs */}
+          <div className="flex border-b border-border mb-6">
+            <button
+              onClick={() => { setActiveProvider('twilio'); setSearchResults([]); }}
+              className={cn("flex-1 pb-3 text-sm font-semibold transition-all border-b-2 text-center", activeProvider === 'twilio' ? "border-primary text-primary" : "border-transparent text-muted-foreground")}
+            >
+              Twilio Provider
+            </button>
+            <button
+              onClick={() => { setActiveProvider('telnyx'); setSearchResults([]); }}
+              className={cn("flex-1 pb-3 text-sm font-semibold transition-all border-b-2 text-center", activeProvider === 'telnyx' ? "border-primary text-primary" : "border-transparent text-muted-foreground")}
+            >
+              Telnyx Provider
+            </button>
+          </div>
           
           <form onSubmit={handleSearch} className="space-y-4 mb-6">
             <div className="grid grid-cols-2 gap-4">
@@ -205,6 +222,9 @@ export default function AdminNumbersView() {
                     <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
                       <span className={cn("w-2 h-2 rounded-full", num.type ? "bg-emerald-500" : "bg-amber-500")} />
                       {num.type ? `Assigned (${num.type})` : 'Unassigned'}
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 bg-accent/40 rounded-full border border-border text-foreground ml-2">
+                        {num.provider || 'twilio'}
+                      </span>
                     </p>
                   </div>
                   <button className="p-2 hover:bg-destructive/10 hover:text-destructive text-muted-foreground rounded-lg transition-colors" title="Release Number">

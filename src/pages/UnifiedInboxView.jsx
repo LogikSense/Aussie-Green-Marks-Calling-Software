@@ -202,7 +202,12 @@ export default function UnifiedInboxView() {
                 <p className="text-xs text-muted-foreground">{activeConv.phone} • {activeConv.email}</p>
               </div>
             </div>
-            <button className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors">
+            <button 
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('dial-number', { detail: { phone: activeConv.phone } }));
+              }}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+            >
               <Phone className="w-3.5 h-3.5" /> Call Customer
             </button>
           </div>

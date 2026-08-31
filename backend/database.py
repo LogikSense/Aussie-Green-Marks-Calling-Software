@@ -36,6 +36,7 @@ def migrate_schema():
         ("user_settings", "chatwoot_url", "VARCHAR(512) DEFAULT ''"),
         ("user_settings", "auto_rotation_enabled", "BOOLEAN DEFAULT TRUE"),
         ("user_settings", "min_health_threshold", "INTEGER DEFAULT 40"),
+        ("twilio_phone_numbers", "provider", "VARCHAR(50) DEFAULT 'twilio'"),
     ]
 
     with engine.begin() as conn:

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Form, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from auth import get_current_user_jwt
 from config import (
@@ -136,6 +137,7 @@ async def purchase_number(req: PurchaseNumberRequest, db: Session = Depends(get_
             friendly_name=incoming_phone_number.friendly_name,
             status="active",
             assigned_to=current_user.id,
+            provider="twilio",
         )
         db.add(db_num)
         db.commit()
@@ -178,6 +180,7 @@ async def get_my_numbers(db: Session = Depends(get_db), current_user: User = Dep
                         status="active",
                         assigned_to=current_user.id,
                         assignment_type="primary",
+                        provider="twilio",
                         tenant_id=current_user.tenant_id,
                     )
                     db.add(row)
@@ -191,4 +194,48 @@ async def get_my_numbers(db: Session = Depends(get_db), current_user: User = Dep
             db.rollback()
 
     numbers = db.query(TwilioPhoneNumber).filter(TwilioPhoneNumber.assigned_to == current_user.id).all()
-    return {"numbers": [{"id": n.id, "phone_number": n.phone_number, "type": n.assignment_type} for n in numbers]}
+    return {"numbers": [{"id": n.id, "phone_number": n.phone_number, "type": n.assignment_type, "provider": n.provider or "twilio"} for n in numbers]}
+
+
+@router.post("/voice")
+async def voice_webhook(
+    To: str = Form(...),
+    From: str = Form(...),
+    callerId: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    TwiML webhook for Twilio Client outgoing calls.
+    Twilio POSTs here when a browser client starts a call.
+    """
+    logger.info("Incoming Twilio voice webhook. To: %s, From: %s, callerId: %s", To, From, callerId)
+    
+    twiml = "<Response>"
+    
+    # If the target starts with "client:", it's an internal agent-to-agent call
+    if To.startswith("client:"):
+        twiml += f"<Dial><Client>{To.replace('client:', '')}</Client></Dial>"
+    else:
+        # Determine caller ID (must be a verified Twilio number)
+        active_caller_id = callerId
+        if not active_caller_id:
+            # Try to find a number assigned to this user
+            client_identity = From.replace("client:", "")
+            user = db.query(User).filter(User.email == client_identity).first()
+            if user:
+                num_row = db.query(TwilioPhoneNumber).filter(
+                    TwilioPhoneNumber.assigned_to == user.id,
+                    TwilioPhoneNumber.status == "active"
+                ).first()
+                if num_row:
+                    active_caller_id = num_row.phone_number
+                    
+        if active_caller_id:
+            # Dial out to the phone number using the specified callerId
+            twiml += f'<Dial callerId="{active_caller_id}"><Number>{To}</Number></Dial>'
+        else:
+            # Fallback/error if no caller ID is configured
+            twiml += "<Say>No outgoing phone number configured for this agent.</Say>"
+            
+    twiml += "</Response>"
+    return Response(content=twiml, media_type="application/xml")

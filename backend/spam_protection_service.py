@@ -1,5 +1,6 @@
 import os
 import logging
+import httpx
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import TwilioPhoneNumber, AuditLog, User
@@ -74,6 +75,47 @@ def rotate_phone_number_if_needed(db: Session, number_id: int, min_threshold: in
     db_num.health_status = "Retired"
     db_num.last_rotated_at = datetime.utcnow()
     
+    provider = db_num.provider or "twilio"
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    
+    # 1. Release the phone number programmatically
+    if provider == "telnyx":
+        telnyx_key = os.getenv("TELNYX_API_KEY", "").strip()
+        if telnyx_key:
+            try:
+                headers = {"Authorization": f"Bearer {telnyx_key}"}
+                with httpx.Client() as client:
+                    # Find UUID ID of the number in Telnyx
+                    res = client.get(
+                        "https://api.telnyx.com/v2/phone_numbers",
+                        headers=headers,
+                        params={"filter[phone_number]": old_phone}
+                    )
+                    if res.status_code == 200 and res.json().get("data"):
+                        phone_id = res.json()["data"][0]["id"]
+                        # Delete/Release it
+                        del_res = client.delete(
+                            f"https://api.telnyx.com/v2/phone_numbers/{phone_id}",
+                            headers=headers
+                        )
+                        if del_res.status_code < 400:
+                            logger.info(f"Released Telnyx phone number {old_phone} (ID: {phone_id})")
+                        else:
+                            logger.error(f"Telnyx delete returned code {del_res.status_code}: {del_res.text}")
+            except Exception as e:
+                logger.error(f"Failed to release retired number {old_phone} from Telnyx: {e}")
+    else:
+        if account_sid and auth_token:
+            try:
+                client = Client(account_sid, auth_token)
+                incoming_list = client.incoming_phone_numbers.list(phone_number=old_phone)
+                for incoming in incoming_list:
+                    incoming.delete()
+                    logger.info(f"Released phone number {old_phone} (SID: {incoming.sid}) from Twilio console.")
+            except Exception as e:
+                logger.error(f"Failed to release retired number {old_phone} from Twilio: {e}")
+            
     replacement_number = None
     
     # 2. Check spare inventory pool first
@@ -92,35 +134,94 @@ def rotate_phone_number_if_needed(db: Session, number_id: int, min_threshold: in
         replacement_number = spare_num.phone_number
         logger.info(f"Reassigned spare number {replacement_number} to agent {agent_id}.")
     else:
-        # 3. Auto-purchase replacement number via Twilio API
-        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        
-        if account_sid and auth_token:
-            try:
-                client = Client(account_sid, auth_token)
-                available = client.available_phone_numbers("US").local.list(limit=1)
-                if available:
-                    new_twilio_num = available[0].phone_number
-                    purchased = client.incoming_phone_numbers.create(phone_number=new_twilio_num)
+        # 3. Auto-purchase replacement number via Provider API
+        if provider == "telnyx":
+            telnyx_key = os.getenv("TELNYX_API_KEY", "").strip()
+            if telnyx_key:
+                try:
+                    headers = {
+                        "Authorization": f"Bearer {telnyx_key}",
+                        "Content-Type": "application/json"
+                    }
+                    country = "US"
+                    if old_phone.startswith("+61"):
+                        country = "AU"
+                    elif old_phone.startswith("+44"):
+                        country = "GB"
+                    elif old_phone.startswith("+64"):
+                        country = "NZ"
+                        
+                    with httpx.Client() as client:
+                        # Search available
+                        search_res = client.get(
+                            "https://api.telnyx.com/v2/available_phone_numbers",
+                            headers=headers,
+                            params={"filter[country_code]": country, "filter[limit]": 1}
+                        )
+                        if search_res.status_code == 200 and search_res.json().get("data"):
+                            new_num = search_res.json()["data"][0]["phone_number"]
+                            # Purchase it
+                            order_res = client.post(
+                                "https://api.telnyx.com/v2/number_orders",
+                                headers=headers,
+                                json={"phone_numbers": [{"phone_number": new_num}]}
+                            )
+                            if order_res.status_code < 400:
+                                new_db_num = TwilioPhoneNumber(
+                                    phone_number=new_num,
+                                    friendly_name=new_num,
+                                    assigned_to=agent_id,
+                                    assignment_type=assignment_type,
+                                    status="active",
+                                    health_score=100,
+                                    health_status="Healthy",
+                                    provider="telnyx",
+                                    stir_shaken_status="A (Full)"
+                                )
+                                db.add(new_db_num)
+                                db.commit()
+                                db.refresh(new_db_num)
+                                replacement_number = new_db_num.phone_number
+                                logger.info(f"Auto-purchased & assigned replacement Telnyx number {replacement_number} ({country}) to agent {agent_id}.")
+                except Exception as e:
+                    logger.error(f"Failed to auto-purchase Telnyx replacement number: {e}")
+        else:
+            if account_sid and auth_token:
+                try:
+                    client = Client(account_sid, auth_token)
                     
-                    new_db_num = TwilioPhoneNumber(
-                        phone_number=purchased.phone_number,
-                        friendly_name=purchased.friendly_name,
-                        assigned_to=agent_id,
-                        assignment_type=assignment_type,
-                        status="active",
-                        health_score=100,
-                        health_status="Healthy",
-                        stir_shaken_status="A (Full)"
-                    )
-                    db.add(new_db_num)
-                    db.commit()
-                    db.refresh(new_db_num)
-                    replacement_number = new_db_num.phone_number
-                    logger.info(f"Auto-purchased & assigned replacement number {replacement_number} to agent {agent_id}.")
-            except Exception as e:
-                logger.error(f"Failed to auto-purchase Twilio replacement number: {e}")
+                    # Auto-detect country code from old phone number
+                    country = "US"
+                    if old_phone.startswith("+61"):
+                        country = "AU"
+                    elif old_phone.startswith("+44"):
+                        country = "GB"
+                    elif old_phone.startswith("+64"):
+                        country = "NZ"
+                    
+                    available = client.available_phone_numbers(country).local.list(limit=1)
+                    if available:
+                        new_twilio_num = available[0].phone_number
+                        purchased = client.incoming_phone_numbers.create(phone_number=new_twilio_num)
+                        
+                        new_db_num = TwilioPhoneNumber(
+                            phone_number=purchased.phone_number,
+                            friendly_name=purchased.friendly_name,
+                            assigned_to=agent_id,
+                            assignment_type=assignment_type,
+                            status="active",
+                            health_score=100,
+                            health_status="Healthy",
+                            provider="twilio",
+                            stir_shaken_status="A (Full)"
+                        )
+                        db.add(new_db_num)
+                        db.commit()
+                        db.refresh(new_db_num)
+                        replacement_number = new_db_num.phone_number
+                        logger.info(f"Auto-purchased & assigned replacement Twilio number {replacement_number} ({country}) to agent {agent_id}.")
+                except Exception as e:
+                    logger.error(f"Failed to auto-purchase Twilio replacement number: {e}")
                 
     # Update agent's primary/secondary number link if applicable
     if agent_id:

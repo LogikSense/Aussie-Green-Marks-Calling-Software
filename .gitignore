@@ -42,3 +42,8 @@ ssl/
 # Temporary files
 *.tmp
 *.temp
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3

@@ -96,6 +96,12 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Auth not configured (JWT_SECRET missing)")
     email = data.email.strip().lower()
     user = get_user_by_email(db, email)
+    
+    print(f"LOGIN DEBUG: email='{email}', user_found={user is not None}")
+    if user:
+        verified = verify_password(data.password, user.password_hash)
+        print(f"LOGIN DEBUG: password_verified={verified}, db_hash='{user.password_hash}', input_pass='{data.password}'")
+        
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.is_active:

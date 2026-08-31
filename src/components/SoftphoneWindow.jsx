@@ -16,6 +16,9 @@ export default function SoftphoneWindow({ onClose }) {
   // Number Management
   const [outboundMode, setOutboundMode] = useState('primary'); // primary, secondary, local_presence
   const [myNumbers, setMyNumbers] = useState([]);
+  const [selectedCallerId, setSelectedCallerId] = useState('');
+  const [dialMode, setDialMode] = useState('direct'); // direct, ai
+  const [callDuration, setCallDuration] = useState(0);
   
   // Transfer Modal & State
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -48,7 +51,11 @@ export default function SoftphoneWindow({ onClose }) {
         });
         if (res.ok) {
           const data = await res.json();
-          setMyNumbers(data.numbers || []);
+          const numbers = data.numbers || [];
+          setMyNumbers(numbers);
+          if (numbers.length > 0) {
+            setSelectedCallerId(numbers[0].phone_number);
+          }
         }
       } catch (err) {
         console.error('Error fetching my numbers:', err);
@@ -56,6 +63,42 @@ export default function SoftphoneWindow({ onClose }) {
     };
     fetchNumbers();
   }, [API_BASE, getAuthHeaders]);
+
+  // Click-to-dial event listener
+  useEffect(() => {
+    const handleDialEvent = (e) => {
+      if (e.detail && e.detail.phone) {
+        setMinimized(false);
+        setDialNumber(e.detail.phone);
+      }
+    };
+    window.addEventListener('dial-number', handleDialEvent);
+    return () => {
+      window.removeEventListener('dial-number', handleDialEvent);
+    };
+  }, []);
+
+  // Call duration timer
+  useEffect(() => {
+    let interval = null;
+    if (callState === 'active') {
+      setCallDuration(0);
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [callState]);
+
+  const formatDuration = (sec) => {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = (sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   // Initialize Twilio Device
   useEffect(() => {
@@ -134,35 +177,84 @@ export default function SoftphoneWindow({ onClose }) {
     setPlacing(true);
     setTokenError('');
     setDialNotice('');
-    try {
-      const displayName = (user?.full_name || user?.email || 'Outbound').trim();
-      const [firstName, ...rest] = displayName.split(/\s+/);
-      const res = await fetch(`${API_BASE}/api/trigger-manual-call`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify({
-          firstName: firstName || 'Outbound',
-          lastName: rest.join(' '),
-          phone: dialNumber.trim(),
-          countryCode: '+61'
-        })
-      });
+    
+    if (dialMode === 'ai') {
+      try {
+        const displayName = (user?.full_name || user?.email || 'Outbound').trim();
+        const [firstName, ...rest] = displayName.split(/\s+/);
+        const res = await fetch(`${API_BASE}/api/trigger-manual-call`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify({
+            firstName: firstName || 'Outbound',
+            lastName: rest.join(' '),
+            phone: dialNumber.trim(),
+            countryCode: '+61'
+          })
+        });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const detail = typeof data.detail === 'string' ? data.detail : 'Failed to place AI call.';
-        throw new Error(detail);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail = typeof data.detail === 'string' ? data.detail : 'Failed to place AI call.';
+          throw new Error(detail);
+        }
+
+        setDialNotice(data.message || 'AI call placed. The recipient will speak with your Vapi agent.');
+      } catch (err) {
+        console.error('Dial error:', err);
+        setTokenError(err.message || 'Failed to place AI call.');
+      } finally {
+        setPlacing(false);
       }
+    } else {
+      // Direct WebRTC voice call via Twilio SDK
+      if (!device) {
+        setTokenError('Softphone device not registered. Check availability status.');
+        setPlacing(false);
+        return;
+      }
+      if (!selectedCallerId) {
+        setTokenError('No Caller ID selected. Please configure a Twilio number first.');
+        setPlacing(false);
+        return;
+      }
+      try {
+        const connection = await device.connect({
+          params: {
+            To: dialNumber.trim(),
+            callerId: selectedCallerId
+          }
+        });
+        setActiveConnection(connection);
+        setCallState('active');
 
-      setDialNotice(data.message || 'AI call placed. The recipient will speak with your Vapi agent.');
-    } catch (err) {
-      console.error('Dial error:', err);
-      setTokenError(err.message || 'Failed to place AI call.');
-    } finally {
-      setPlacing(false);
+        connection.on('accept', () => {
+          setCallState('active');
+        });
+
+        connection.on('disconnect', () => {
+          setCallState('idle');
+          setActiveConnection(null);
+          setDialNumber('');
+        });
+
+        connection.on('error', (err) => {
+          console.error('Call connection error:', err);
+          setTokenError(`Call failed: ${err.message}`);
+          setCallState('idle');
+          setActiveConnection(null);
+        });
+      } catch (err) {
+        console.error('Failed to initiate WebRTC call:', err);
+        setTokenError(err.message || 'Failed to connect call.');
+        setCallState('idle');
+        setActiveConnection(null);
+      } finally {
+        setPlacing(false);
+      }
     }
   };
 
@@ -261,29 +353,49 @@ export default function SoftphoneWindow({ onClose }) {
           <div className="flex-1 p-4 flex flex-col">
             {/* Status & Outbound Number Selector */}
             <div className="space-y-2 mb-4">
-              <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
-                <span className="text-xs font-medium text-slate-400 ml-2">Agent Status</span>
-                <select 
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="bg-transparent text-xs font-semibold focus:outline-none border-none cursor-pointer text-emerald-400"
-                >
-                  <option value="Available" className="bg-slate-900 text-white">🟢 Available</option>
-                  <option value="Busy" className="bg-slate-900 text-white">🔴 Busy</option>
-                  <option value="Offline" className="bg-slate-900 text-white">⚫ Offline</option>
-                </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
+                  <span className="text-xs font-medium text-slate-400 ml-1">Status</span>
+                  <select 
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="bg-transparent text-xs font-semibold focus:outline-none border-none cursor-pointer text-emerald-400 w-24 text-right"
+                  >
+                    <option value="Available" className="bg-slate-900 text-white">🟢 Avail</option>
+                    <option value="Busy" className="bg-slate-900 text-white">🔴 Busy</option>
+                    <option value="Offline" className="bg-slate-900 text-white">⚫ Offline</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
+                  <span className="text-xs font-medium text-slate-400 ml-1">Mode</span>
+                  <select 
+                    value={dialMode}
+                    onChange={(e) => setDialMode(e.target.value)}
+                    className="bg-transparent text-xs font-semibold focus:outline-none border-none cursor-pointer text-indigo-400 w-24 text-right"
+                  >
+                    <option value="direct" className="bg-slate-900 text-white">📞 Direct</option>
+                    <option value="ai" className="bg-slate-900 text-white">🤖 AI Agent</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
                 <span className="text-xs font-medium text-slate-400 ml-2">Caller ID</span>
                 <select 
-                  value={outboundMode}
-                  onChange={(e) => setOutboundMode(e.target.value)}
-                  className="bg-transparent text-xs font-medium text-slate-200 focus:outline-none border-none cursor-pointer"
+                  value={selectedCallerId}
+                  onChange={(e) => setSelectedCallerId(e.target.value)}
+                  className="bg-transparent text-xs font-medium text-slate-200 focus:outline-none border-none cursor-pointer max-w-[200px]"
                 >
-                  <option value="primary" className="bg-slate-900">Primary Number</option>
-                  <option value="secondary" className="bg-slate-900">Secondary Number</option>
-                  <option value="local_presence" className="bg-slate-900">Local Presence (Auto Match)</option>
+                  {myNumbers.length > 0 ? (
+                    myNumbers.map((n) => (
+                      <option key={n.id} value={n.phone_number} className="bg-slate-900">
+                        {n.phone_number} ({n.type || 'Primary'})
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" className="bg-slate-900">No Twilio Numbers</option>
+                  )}
                 </select>
               </div>
             </div>
@@ -329,7 +441,7 @@ export default function SoftphoneWindow({ onClose }) {
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <Phone className="w-5 h-5 fill-current" />
-                {placing ? 'Placing AI call…' : 'Dial Out'}
+                {placing ? (dialMode === 'ai' ? 'Placing AI call…' : 'Connecting…') : 'Dial Out'}
               </button>
             </div>
           </div>
@@ -370,7 +482,7 @@ export default function SoftphoneWindow({ onClose }) {
               <h3 className="text-xl font-bold tracking-wide">{dialNumber}</h3>
               <p className="text-emerald-400 text-xs font-medium flex items-center justify-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
-                <span>Connected • 01:24</span>
+                <span>Connected • {formatDuration(callDuration)}</span>
               </p>
             </div>
 
