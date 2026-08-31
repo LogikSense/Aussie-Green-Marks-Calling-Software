@@ -37,6 +37,8 @@ def migrate_schema():
         ("user_settings", "auto_rotation_enabled", "BOOLEAN DEFAULT TRUE"),
         ("user_settings", "min_health_threshold", "INTEGER DEFAULT 40"),
         ("twilio_phone_numbers", "provider", "VARCHAR(50) DEFAULT 'twilio'"),
+        ("user_settings", "voice_ai_provider", "VARCHAR(50) DEFAULT ''"),
+        ("user_settings", "ai_agent_prompt", "TEXT DEFAULT ''"),
     ]
 
     with engine.begin() as conn:

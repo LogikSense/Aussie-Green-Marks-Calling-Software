@@ -12,7 +12,7 @@ export default function AdminNumbersView() {
   
   const [myNumbers, setMyNumbers] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
-  const [activeProvider, setActiveProvider] = useState('twilio'); // twilio, telnyx
+  const [activeProvider, setActiveProvider] = useState('twilio');
   
   const [searchParams, setSearchParams] = useState({
     country: 'US',
@@ -140,6 +140,12 @@ export default function AdminNumbersView() {
               className={cn("flex-1 pb-3 text-sm font-semibold transition-all border-b-2 text-center", activeProvider === 'telnyx' ? "border-primary text-primary" : "border-transparent text-muted-foreground")}
             >
               Telnyx Provider
+            </button>
+            <button
+              onClick={() => { setActiveProvider('signalwire'); setSearchResults([]); }}
+              className={cn("flex-1 pb-3 text-sm font-semibold transition-all border-b-2 text-center", activeProvider === 'signalwire' ? "border-primary text-primary" : "border-transparent text-muted-foreground")}
+            >
+              SignalWire Provider
             </button>
           </div>
           

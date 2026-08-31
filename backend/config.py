@@ -30,6 +30,13 @@ TWILIO_TWIML_APP_SID = (os.getenv("TWILIO_TWIML_APP_SID") or "").strip()
 
 TELNYX_API_KEY = (os.getenv("TELNYX_API_KEY") or "").strip()
 
+SIGNALWIRE_SPACE_URL = (os.getenv("SIGNALWIRE_SPACE_URL") or "").strip()
+SIGNALWIRE_PROJECT_ID = (os.getenv("SIGNALWIRE_PROJECT_ID") or "").strip()
+SIGNALWIRE_API_TOKEN = (os.getenv("SIGNALWIRE_API_TOKEN") or "").strip()
+SIGNALWIRE_PUBLIC_BASE_URL = (os.getenv("SIGNALWIRE_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+SIGNALWIRE_WEBHOOK_SECRET = (os.getenv("SIGNALWIRE_WEBHOOK_SECRET") or "").strip()
+SIGNALWIRE_SIGNING_KEY = (os.getenv("SIGNALWIRE_SIGNING_KEY") or "").strip()
+
 CALL_CREDIT_COST = float(os.getenv("CALL_CREDIT_COST", "0.50"))
 
 _api_keys_raw = os.getenv("API_KEYS", "")

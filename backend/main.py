@@ -26,6 +26,7 @@ import settings_service as ss
 from routers.auth_router import router as auth_router
 from routers.chatwoot_router import router as chatwoot_router
 from routers.telnyx_router import router as telnyx_router
+from routers.signalwire_router import router as signalwire_router
 
 try:
     from routers.twilio_router import router as twilio_router
@@ -100,6 +101,7 @@ def optional_api_key(authorization: Optional[str] = Header(None, alias="Authoriz
 app.include_router(auth_router)
 app.include_router(chatwoot_router)
 app.include_router(telnyx_router)
+app.include_router(signalwire_router)
 if TWILIO_ROUTERS_AVAILABLE:
     app.include_router(twilio_router)
     app.include_router(telephony_router)
@@ -133,6 +135,8 @@ class ApiConfig(BaseModel):
     vapiAssistantId: Optional[str] = None
     webhookUrl: Optional[str] = None
     crmEndpoint: Optional[str] = None
+    voiceAiProvider: Optional[str] = None
+    aiAgentPrompt: Optional[str] = None
 
 class VerificationConfig(BaseModel):
     verifyName: bool = True
@@ -523,21 +527,25 @@ async def manual_dial(request: ManualCallRequest, user: User = Depends(get_curre
             detail=f"Insufficient credits (${wallet.balance:.2f}). Top up on Billing to place AI calls."
         )
 
-    # 1. Get settings if not provided
     vapi_key = request.vapiApiKey
     assistant_id = request.assistantId
     phone_number_id = request.phoneNumberId
     webhook_url = request.webhookUrl
-    
+    settings = ss.get_settings(db, user.id) or {}
     if not vapi_key or not assistant_id or not phone_number_id:
-        settings = ss.get_settings(db, user.id)
-        if settings:
-            vapi_key = vapi_key or settings.get("vapiApiKey")
-            assistant_id = assistant_id or settings.get("vapiAssistantId")
-            phone_number_id = phone_number_id or settings.get("vapiPhoneNumberId")
-            webhook_url = webhook_url or settings.get("webhookUrl")
-            
-    if not vapi_key or not assistant_id or not phone_number_id:
+        vapi_key = vapi_key or settings.get("vapiApiKey")
+        assistant_id = assistant_id or settings.get("vapiAssistantId")
+        phone_number_id = phone_number_id or settings.get("vapiPhoneNumberId")
+        webhook_url = webhook_url or settings.get("webhookUrl")
+
+    import signalwire_service as sw
+
+    use_signalwire = sw.uses_signalwire_ai(settings)
+    if use_signalwire:
+        from signalwire_client import require_credentials
+
+        require_credentials()
+    elif not vapi_key or not assistant_id or not phone_number_id:
         raise HTTPException(status_code=400, detail="Voice provider configuration missing (API Key, Assistant ID, or Phone ID)")
 
     # 2. Format phone number
@@ -582,13 +590,71 @@ async def manual_dial(request: ManualCallRequest, user: User = Depends(get_curre
     }
     cs.add_customer(db, customer_data)
 
+    if use_signalwire and earliest_at:
+        raise HTTPException(
+            status_code=400,
+            detail="SignalWire outbound AI is immediate. Clear the schedule to call now, or switch Voice AI engine to Vapi for scheduled calls.",
+        )
+
+    caller_name = f"{request.firstName} {request.lastName}".strip()
+
+    if use_signalwire:
+        from_row = sw.assigned_from_number(db, user.id)
+        if not from_row:
+            raise HTTPException(
+                status_code=400,
+                detail="No SignalWire caller ID assigned. Buy a number under Phone Numbers → SignalWire first.",
+            )
+        prompt = await sw.resolve_agent_prompt(settings)
+        try:
+            result = await sw.place_ai_call(
+                from_number=from_row.phone_number,
+                to_number=phone,
+                prompt=prompt,
+                caller_name=caller_name or None,
+                status_url=webhook_url or None,
+                post_prompt_url=webhook_url or None,
+            )
+            call_id = result.get("id")
+            wallet.balance -= CALL_CREDIT_COST
+            usage_trans = Transaction(
+                user_id=user.id,
+                amount=-CALL_CREDIT_COST,
+                type="usage",
+                description=f"AI Call to {phone}",
+                status="completed",
+            )
+            db.add(usage_trans)
+            lead = CampaignLead(
+                campaign_id=manual_camp.id,
+                customer_id=customer_id,
+                status="calling",
+                vapi_call_id=call_id,
+                result=result,
+            )
+            db.add(lead)
+            db.commit()
+            return {
+                "success": True,
+                "callId": call_id,
+                "message": "AI call placed. The recipient will speak with your SignalWire agent.",
+                "new_balance": wallet.balance,
+            }
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            logger.error("SignalWire manual dial failed: %s", e)
+            raise HTTPException(status_code=502, detail="Failed to place outbound AI call.")
+
     # 6. Call Vapi API
     call_data = {
         "assistantId": assistant_id,
         "phoneNumberId": phone_number_id,
         "customer": {
             "number": phone,
-            "name": f"{request.firstName} {request.lastName}".strip()
+            "name": caller_name
         }
     }
     if earliest_at:
@@ -639,7 +705,7 @@ async def manual_dial(request: ManualCallRequest, user: User = Depends(get_curre
             db.add(lead)
             db.commit()
             
-            msg = f"Call scheduled for {earliest_at}" if earliest_at else "AI call placed. The recipient will speak with your Vapi agent."
+            msg = f"Call scheduled for {earliest_at}" if earliest_at else "AI call placed. The recipient will speak with your AI agent."
             return {
                 "success": True, 
                 "callId": call_id, 
@@ -1497,7 +1563,7 @@ async def get_statistics(db: Session = Depends(get_db)):
 async def get_settings(user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):
     """Get current user's integration settings (CRM + Vapi). Requires JWT."""
     config = ss.get_settings(db, user.id)
-    return {"success": True, "config": config or {"crmEndpoint": "", "crmApiKey": "", "vapiApiKey": "", "vapiPhoneNumberId": "", "vapiAssistantId": "", "webhookUrl": ""}}
+    return {"success": True, "config": config or {"crmEndpoint": "", "crmApiKey": "", "vapiApiKey": "", "vapiPhoneNumberId": "", "vapiAssistantId": "", "webhookUrl": "", "voiceAiProvider": "", "aiAgentPrompt": ""}}
 
 @app.put("/api/v1/settings", dependencies=[Depends(get_current_user_jwt)])
 async def put_settings(payload: ApiConfig, user = Depends(get_current_user_jwt), db: Session = Depends(get_db)):

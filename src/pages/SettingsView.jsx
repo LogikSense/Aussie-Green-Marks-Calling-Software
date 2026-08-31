@@ -14,6 +14,8 @@ export default function SettingsView() {
     vapiApiKey: '',
     vapiAssistantId: '',
     vapiPhoneNumberId: '',
+    voiceAiProvider: '',
+    aiAgentPrompt: '',
     crmEndpoint: '',
     crmApiKey: '',
     webhookUrl: '',
@@ -38,6 +40,8 @@ export default function SettingsView() {
             vapiApiKey: data.config.vapiApiKey || '',
             vapiAssistantId: data.config.vapiAssistantId || '',
             vapiPhoneNumberId: data.config.vapiPhoneNumberId || '',
+            voiceAiProvider: data.config.voiceAiProvider || '',
+            aiAgentPrompt: data.config.aiAgentPrompt || '',
             crmEndpoint: data.config.crmEndpoint || '',
             crmApiKey: data.config.crmApiKey || '',
             webhookUrl: data.config.webhookUrl || '',
@@ -136,6 +140,35 @@ export default function SettingsView() {
             </h3>
             
             <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Voice AI engine</label>
+                <select
+                  value={formData.voiceAiProvider || ''}
+                  onChange={(e) => setFormData({...formData, voiceAiProvider: e.target.value})}
+                  className="w-full bg-accent/20 border-border rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-primary/20 transition-all"
+                >
+                  <option value="">Vapi (default)</option>
+                  <option value="signalwire">SignalWire</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  SignalWire uses a purchased SignalWire number as caller ID and the prompt below (or your Vapi assistant prompt).
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">AI agent prompt</label>
+                <textarea
+                  value={formData.aiAgentPrompt}
+                  onChange={(e) => setFormData({...formData, aiAgentPrompt: e.target.value})}
+                  placeholder="You are a professional outbound agent. Confirm identity, then..."
+                  rows={5}
+                  className="w-full bg-accent/20 border-border rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Required for SignalWire AI if you are not also storing a Vapi assistant.
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-sm font-medium">Service Authentication Key</label>
                 <div className="relative">

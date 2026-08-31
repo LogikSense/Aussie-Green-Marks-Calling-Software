@@ -61,6 +61,8 @@ class UserSettings(Base):
     vapi_phone_number_id = Column(String(255), nullable=True, default="")
     vapi_assistant_id = Column(String(255), nullable=True, default="")
     webhook_url = Column(String(512), nullable=True, default="")
+    voice_ai_provider = Column(String(50), nullable=True, default="")
+    ai_agent_prompt = Column(Text, nullable=True, default="")
     chatwoot_account_id = Column(String(100), nullable=True, default="")
     chatwoot_access_token = Column(Text, nullable=True, default="")
     chatwoot_url = Column(String(512), nullable=True, default="")

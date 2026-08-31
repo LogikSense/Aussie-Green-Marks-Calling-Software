@@ -11,6 +11,8 @@ def to_api_config(row: UserSettings) -> dict:
         "vapiPhoneNumberId": row.vapi_phone_number_id or "",
         "vapiAssistantId": row.vapi_assistant_id or "",
         "webhookUrl": row.webhook_url or "",
+        "voiceAiProvider": row.voice_ai_provider or "",
+        "aiAgentPrompt": row.ai_agent_prompt or "",
     }
 
 
@@ -28,6 +30,10 @@ def upsert_settings(db: Session, user_id: int, payload: dict) -> dict:
         row.vapi_phone_number_id = (payload.get("vapiPhoneNumberId") or "").strip()
         row.vapi_assistant_id = (payload.get("vapiAssistantId") or "").strip()
         row.webhook_url = (payload.get("webhookUrl") or "").strip()
+        if "voiceAiProvider" in payload:
+            row.voice_ai_provider = (payload.get("voiceAiProvider") or "").strip()
+        if "aiAgentPrompt" in payload:
+            row.ai_agent_prompt = (payload.get("aiAgentPrompt") or "").strip()
         db.commit()
         db.refresh(row)
         return to_api_config(row)
@@ -39,6 +45,8 @@ def upsert_settings(db: Session, user_id: int, payload: dict) -> dict:
         vapi_phone_number_id=(payload.get("vapiPhoneNumberId") or "").strip(),
         vapi_assistant_id=(payload.get("vapiAssistantId") or "").strip(),
         webhook_url=(payload.get("webhookUrl") or "").strip(),
+        voice_ai_provider=(payload.get("voiceAiProvider") or "").strip(),
+        ai_agent_prompt=(payload.get("aiAgentPrompt") or "").strip(),
     )
     db.add(row)
     db.commit()

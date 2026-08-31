@@ -193,6 +193,15 @@ async def get_my_numbers(db: Session = Depends(get_db), current_user: User = Dep
             logger.error("Failed to sync Twilio incoming numbers: %s", e)
             db.rollback()
 
+    try:
+        from config import SIGNALWIRE_API_TOKEN, SIGNALWIRE_PROJECT_ID, SIGNALWIRE_SPACE_URL
+        import signalwire_service as sw
+
+        if SIGNALWIRE_SPACE_URL and SIGNALWIRE_PROJECT_ID and SIGNALWIRE_API_TOKEN:
+            await sw.sync_incoming_numbers(db, current_user)
+    except Exception as e:
+        logger.error("Failed to sync SignalWire incoming numbers: %s", e)
+
     numbers = db.query(TwilioPhoneNumber).filter(TwilioPhoneNumber.assigned_to == current_user.id).all()
     return {"numbers": [{"id": n.id, "phone_number": n.phone_number, "type": n.assignment_type, "provider": n.provider or "twilio"} for n in numbers]}
 

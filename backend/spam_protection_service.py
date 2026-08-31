@@ -81,7 +81,15 @@ def rotate_phone_number_if_needed(db: Session, number_id: int, min_threshold: in
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
     
     # 1. Release the phone number programmatically
-    if provider == "telnyx":
+    if provider == "signalwire":
+        try:
+            import signalwire_service as sw
+
+            if sw.release_number_sync(old_phone):
+                logger.info("Released SignalWire phone number %s", old_phone)
+        except Exception as e:
+            logger.error("Failed to release retired number %s from SignalWire: %s", old_phone, e)
+    elif provider == "telnyx":
         telnyx_key = TELNYX_API_KEY
         if telnyx_key:
             try:
@@ -123,7 +131,8 @@ def rotate_phone_number_if_needed(db: Session, number_id: int, min_threshold: in
     spare_num = db.query(TwilioPhoneNumber).filter(
         TwilioPhoneNumber.is_spare == True,
         TwilioPhoneNumber.status == "active",
-        TwilioPhoneNumber.assigned_to == None
+        TwilioPhoneNumber.assigned_to == None,
+        TwilioPhoneNumber.provider == provider,
     ).first()
     
     if spare_num:
@@ -136,7 +145,40 @@ def rotate_phone_number_if_needed(db: Session, number_id: int, min_threshold: in
         logger.info(f"Reassigned spare number {replacement_number} to agent {agent_id}.")
     else:
         # 3. Auto-purchase replacement number via Provider API
-        if provider == "telnyx":
+        if provider == "signalwire":
+            try:
+                import signalwire_service as sw
+                from signalwire_client import iso_country_from_e164, require_credentials
+
+                require_credentials()
+                country = iso_country_from_e164(old_phone)
+                available = sw.search_local_numbers_sync(country)
+                if available:
+                    purchased = sw.purchase_number_sync(available[0]["phone_number"])
+                    new_db_num = TwilioPhoneNumber(
+                        phone_number=purchased.get("phone_number") or available[0]["phone_number"],
+                        friendly_name=purchased.get("friendly_name") or purchased.get("phone_number"),
+                        assigned_to=agent_id,
+                        assignment_type=assignment_type,
+                        status="active",
+                        health_score=100,
+                        health_status="Healthy",
+                        provider="signalwire",
+                        stir_shaken_status="A (Full)",
+                    )
+                    db.add(new_db_num)
+                    db.commit()
+                    db.refresh(new_db_num)
+                    replacement_number = new_db_num.phone_number
+                    logger.info(
+                        "Auto-purchased & assigned replacement SignalWire number %s (%s) to agent %s.",
+                        replacement_number,
+                        country,
+                        agent_id,
+                    )
+            except Exception as e:
+                logger.error("Failed to auto-purchase SignalWire replacement number: %s", e)
+        elif provider == "telnyx":
             telnyx_key = TELNYX_API_KEY
             if telnyx_key:
                 try:
